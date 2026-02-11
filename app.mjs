@@ -697,6 +697,7 @@ function renderAnalysisCharts() {
                 ${options}
               </select>
             </label>
+            <button type="button" class="rbn-copy-btn" title="Copy as image" aria-label="Copy as image">🖼</button>
             <span class="rbn-signal-status" ${list.length ? "hidden" : ""}>${statusText}</span>
           </div>
           <div class="rbn-signal-body">
@@ -881,6 +882,79 @@ function handleLegendBandClick(event) {
   renderAnalysisCharts();
 }
 
+async function copyCardAsImage(card, button) {
+  const html2canvasFn = globalThis?.html2canvas;
+  if (typeof html2canvasFn !== "function") return;
+
+  button.disabled = true;
+  const prevState = button.dataset.state || "";
+  const prevTitle = button.title || "Copy as image";
+  const prevText = button.textContent || "🖼";
+
+  try {
+    const canvas = await html2canvasFn(card, {
+      backgroundColor: "#ffffff",
+      scale: Math.max(1, Math.min(2, Number(globalThis?.devicePixelRatio) || 1)),
+      useCORS: true,
+      logging: false,
+    });
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Could not render image.");
+
+    if (navigator?.clipboard?.write && globalThis?.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      button.dataset.state = "copied";
+      button.title = "Copied";
+      button.textContent = "✓";
+      setTimeout(() => {
+        button.dataset.state = prevState;
+        button.title = prevTitle;
+        button.textContent = prevText;
+      }, 1500);
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "rbn-graph.png";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+
+    button.dataset.state = "copied";
+    button.title = "Downloaded (clipboard unavailable)";
+    button.textContent = "↓";
+    setTimeout(() => {
+      button.dataset.state = prevState;
+      button.title = prevTitle;
+      button.textContent = prevText;
+    }, 1500);
+  } catch {
+    button.dataset.state = "error";
+    button.title = "Copy failed";
+    button.textContent = "!";
+    setTimeout(() => {
+      button.dataset.state = prevState;
+      button.title = prevTitle;
+      button.textContent = prevText;
+    }, 1500);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function handleCopyCardClick(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest(".rbn-copy-btn");
+  if (!button || !ui.chartsRoot.contains(button)) return;
+  const card = button.closest(".rbn-signal-card");
+  if (!card) return;
+  copyCardAsImage(card, button);
+}
+
 function bindEvents() {
   const onDatePrimaryChange = () => {
     suggestSecondaryDateFromPrimary();
@@ -898,6 +972,7 @@ function bindEvents() {
   ui.form.addEventListener("submit", handleSubmit);
   ui.form.addEventListener("reset", handleReset);
   ui.chartsRoot.addEventListener("click", handleLegendBandClick);
+  ui.chartsRoot.addEventListener("click", handleCopyCardClick);
 }
 
 function preloadBackgroundData() {

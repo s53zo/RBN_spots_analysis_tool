@@ -582,6 +582,40 @@ button {
   color: #9a5c00;
 }
 
+.rbn-copy-btn {
+  margin-left: auto;
+  min-width: 1.9rem;
+  min-height: 1.9rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border-radius: 0.48rem;
+  border: 1px solid #bfd2ef;
+  background: #f2f7ff;
+  color: #194c86;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.rbn-copy-btn:hover:not(:disabled) {
+  background: #e5efff;
+  border-color: #a8c1e8;
+}
+
+.rbn-copy-btn[data-state="copied"] {
+  background: #ddf4e9;
+  border-color: #b9e5cf;
+  color: #0b6840;
+}
+
+.rbn-copy-btn[data-state="error"] {
+  background: #fae2df;
+  border-color: #f2bcb5;
+  color: #872e26;
+}
+
 .rbn-signal-body {
   padding: 0.42rem 0.56rem 0.52rem;
   display: grid;
