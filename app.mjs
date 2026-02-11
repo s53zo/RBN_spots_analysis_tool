@@ -699,7 +699,7 @@ function renderAnalysisCharts() {
                 ${options}
               </select>
             </label>
-            <button type="button" class="rbn-copy-btn" title="Copy as image" aria-label="Copy as image">🖼</button>
+            <button type="button" class="rbn-copy-btn" title="Copy as image" aria-label="Copy as image">Copy as image</button>
             <span class="rbn-signal-status" ${list.length ? "hidden" : ""}>${statusText}</span>
           </div>
           <div class="rbn-signal-body">
@@ -1175,7 +1175,7 @@ async function copyCardAsImage(card, button) {
 
   const prevState = button.dataset.state || "";
   const prevTitle = button.title || "Copy as image";
-  const prevText = button.textContent || "🖼";
+  const prevText = button.textContent || "Copy as image";
   const continent = String(card.querySelector(".rbn-signal-select")?.dataset.continent || "N/A").trim().toUpperCase() || "N/A";
   const spotter = String(card.querySelector(".rbn-signal-select")?.value || "spotter").trim() || "spotter";
   const filename = `rbn_compare_signal_${sanitizeFilenameToken(continent)}_${sanitizeFilenameToken(spotter)}.png`;
@@ -1183,7 +1183,7 @@ async function copyCardAsImage(card, button) {
   button.disabled = true;
   button.dataset.state = "";
   button.title = "Preparing image...";
-  button.textContent = "…";
+  button.textContent = "Copying...";
 
   try {
     let blob = null;
@@ -1200,18 +1200,18 @@ async function copyCardAsImage(card, button) {
     if (copied) {
       button.dataset.state = "copied";
       button.title = "Copied to clipboard";
-      button.textContent = "✓";
+      button.textContent = "Copied";
     } else {
       downloadBlobFile(blob, filename);
       button.dataset.state = "copied";
       button.title = "Clipboard unavailable, PNG downloaded";
-      button.textContent = "↓";
+      button.textContent = "Downloaded";
     }
   } catch (err) {
     console.error("Copy graph as image failed:", err);
     button.dataset.state = "error";
     button.title = "Unable to copy or download image";
-    button.textContent = "!";
+    button.textContent = "Copy failed";
   } finally {
     setTimeout(() => {
       button.dataset.state = prevState;
