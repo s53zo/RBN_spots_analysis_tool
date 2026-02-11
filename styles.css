@@ -417,3 +417,210 @@ button {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: #f8fbff;
+  margin-bottom: 0.7rem;
+}
+
+.chart-controls label {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.chart-controls select {
+  min-height: 2.3rem;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: #fff;
+  color: var(--text);
+  padding-inline: 0.65rem;
+  font: inherit;
+}
+
+.chart-controls-note {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.slot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+}
+
+.slot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  background: #f6f9ff;
+  border-radius: 999px;
+  padding: 0.26rem 0.54rem;
+  font-size: 0.83rem;
+}
+
+.slot-chip-call {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+}
+
+.slot-chip-marker {
+  color: #1b497e;
+}
+
+.slot-chip-line {
+  color: #44678f;
+  letter-spacing: 0.06em;
+}
+
+.chart-failures {
+  border: 1px solid #efc1ba;
+  background: #fdf0ee;
+  border-radius: 0.7rem;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.7rem;
+  color: #7a3129;
+}
+
+.chart-failures p {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.chart-failures p + p {
+  margin-top: 0.35rem;
+}
+
+.chart-empty {
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: #fbfdff;
+  padding: 0.9rem;
+}
+
+.rbn-signal-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 1fr;
+}
+
+.rbn-signal-card {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: #fff;
+  overflow: hidden;
+}
+
+.rbn-signal-head {
+  padding: 0.7rem;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 0.45rem;
+}
+
+.rbn-signal-head h4 {
+  font-size: 1rem;
+}
+
+.rbn-signal-picker {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.rbn-signal-picker span {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.rbn-signal-picker select {
+  min-height: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: #fff;
+  font: inherit;
+  color: var(--text);
+  padding-inline: 0.65rem;
+}
+
+.rbn-signal-status {
+  font-size: 0.88rem;
+  color: #9a5c00;
+}
+
+.rbn-signal-body {
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.rbn-signal-plot {
+  border: 1px solid #d6e0ee;
+  border-radius: 0.65rem;
+  background: #fcfeff;
+  padding: 0.35rem;
+}
+
+.rbn-signal-canvas {
+  display: block;
+  width: 100%;
+  min-height: 17.5rem;
+}
+
+.rbn-signal-meta {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  padding: 0.18rem 0.2rem 0;
+}
+
+.rbn-signal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.rbn-signal-legend-bands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.rbn-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: #edf3ff;
+  border: 1px solid #cbd9ef;
+  color: #27466e;
+}
+
+.rbn-legend-item i {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+}
+
+@media (min-width: 48rem) {
+  .rbn-signal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 64rem) {
+  .rbn-signal-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
