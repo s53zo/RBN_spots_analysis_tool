@@ -79,6 +79,11 @@ p {
   gap: 0.55rem;
 }
 
+.hero-title-wrap {
+  display: grid;
+  gap: 0.65rem;
+}
+
 .kicker {
   font-size: 0.72rem;
   font-weight: 700;
@@ -186,16 +191,11 @@ p {
   color: var(--text-muted);
 }
 
-.chapter-nav-panel {
-  padding: 0.7rem;
-}
-
 .chapter-tabs {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.55rem;
-  max-width: 24rem;
-  margin-inline: auto;
+  width: min(100%, 15rem);
 }
 
 .chapter-tab {
@@ -231,19 +231,6 @@ p {
   opacity: 1;
   border-color: rgba(255, 255, 255, 0.85);
   transform: translateY(-1px);
-}
-
-.chapter-copy-panel {
-  padding: 0.7rem 0.9rem;
-}
-
-.chapter-copy-block {
-  max-width: 78ch;
-  margin-inline: auto;
-  display: grid;
-  gap: 0.2rem;
-  color: #294569;
-  font-size: 0.95rem;
 }
 
 .chapter-pane {
@@ -512,7 +499,6 @@ button {
   }
 
   .hero,
-  .chapter-nav-panel,
   .chapter-pane,
   .input-panel,
   .charts-panel {
@@ -523,6 +509,16 @@ button {
     grid-template-columns: minmax(0, 3.2fr) minmax(16rem, 1.05fr);
     align-items: stretch;
     gap: 0.75rem;
+  }
+
+  .hero-title-wrap {
+    grid-template-columns: minmax(0, 1fr) minmax(14rem, 15rem);
+    align-items: start;
+    gap: 0.8rem;
+  }
+
+  .chapter-tabs {
+    justify-self: end;
   }
 
   .hero-status {

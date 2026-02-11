@@ -74,7 +74,6 @@ const liveState = {
 
 const ui = {
   chapterTabs: Array.from(document.querySelectorAll("[data-chapter-tab]")),
-  chapterCopies: Array.from(document.querySelectorAll("[data-chapter-copy]")),
   chapterHistorical: document.querySelector("#chapter-historical"),
   chapterLive: document.querySelector("#chapter-live"),
   chapterSkimmer: document.querySelector("#chapter-skimmer"),
@@ -124,9 +123,6 @@ function setActiveChapter(chapter) {
   if (ui.chapterHistorical) ui.chapterHistorical.hidden = normalized !== "historical";
   if (ui.chapterLive) ui.chapterLive.hidden = normalized !== "live";
   if (ui.chapterSkimmer) ui.chapterSkimmer.hidden = normalized !== "skimmer";
-  for (const copy of ui.chapterCopies) {
-    copy.hidden = copy.dataset.chapterCopy !== normalized;
-  }
   syncLiveRefreshTimer();
 }
 

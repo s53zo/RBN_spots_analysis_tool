@@ -29,9 +29,46 @@
     <main class="app-shell">
       <header class="hero">
         <div class="hero-main">
-          <div>
-            <p class="kicker">RBN Analysis Tool</p>
-            <h1>RBN Signal Comparative Analysis</h1>
+          <div class="hero-title-wrap">
+            <div>
+              <p class="kicker">RBN Analysis Tool</p>
+              <h1>RBN Signal Comparative Analysis</h1>
+            </div>
+            <div class="chapter-tabs" role="tablist" aria-label="Analysis chapters">
+              <button
+                id="tab-historical"
+                class="chapter-tab is-active"
+                role="tab"
+                type="button"
+                aria-controls="chapter-historical"
+                aria-selected="true"
+                data-chapter-tab="historical"
+              >
+                Historical analysis
+              </button>
+              <button
+                id="tab-live"
+                class="chapter-tab"
+                role="tab"
+                type="button"
+                aria-controls="chapter-live"
+                aria-selected="false"
+                data-chapter-tab="live"
+              >
+                Live analysis
+              </button>
+              <button
+                id="tab-skimmer"
+                class="chapter-tab"
+                role="tab"
+                type="button"
+                aria-controls="chapter-skimmer"
+                aria-selected="false"
+                data-chapter-tab="skimmer"
+              >
+                Skimmer comparison
+              </button>
+            </div>
           </div>
           <aside class="hero-status" aria-live="polite">
             <div id="status-pill" class="status-pill" data-state="idle">Idle</div>
@@ -50,59 +87,6 @@
           </aside>
         </div>
       </header>
-
-      <section class="panel chapter-nav-panel" aria-label="Analysis chapters">
-        <div class="chapter-tabs" role="tablist" aria-label="Analysis chapters">
-          <button
-            id="tab-historical"
-            class="chapter-tab is-active"
-            role="tab"
-            type="button"
-            aria-controls="chapter-historical"
-            aria-selected="true"
-            data-chapter-tab="historical"
-          >
-            Historical analysis
-          </button>
-          <button
-            id="tab-live"
-            class="chapter-tab"
-            role="tab"
-            type="button"
-            aria-controls="chapter-live"
-            aria-selected="false"
-            data-chapter-tab="live"
-          >
-            Live analysis
-          </button>
-          <button
-            id="tab-skimmer"
-            class="chapter-tab"
-            role="tab"
-            type="button"
-            aria-controls="chapter-skimmer"
-            aria-selected="false"
-            data-chapter-tab="skimmer"
-          >
-            Skimmer comparison
-          </button>
-        </div>
-      </section>
-
-      <section class="panel chapter-copy-panel" aria-live="polite">
-        <div id="chapter-copy-historical" class="chapter-copy-block" data-chapter-copy="historical">
-          <p>Pick up to two UTC dates, enter your callsign, and optionally compare with up to three others.</p>
-          <p>Choose one or two UTC dates.</p>
-          <p>Enter your callsign and optional comparison callsigns.</p>
-          <p>Start analysis.</p>
-        </div>
-        <div id="chapter-copy-live" class="chapter-copy-block" data-chapter-copy="live" hidden>
-          <p>Rolling window, refreshed every 5 minutes while this tab is active.</p>
-        </div>
-        <div id="chapter-copy-skimmer" class="chapter-copy-block" data-chapter-copy="skimmer" hidden>
-          <p>Skimmer comparison is coming soon.</p>
-        </div>
-      </section>
 
       <section id="chapter-historical" class="chapter-pane chapter-pane-historical" role="tabpanel" aria-labelledby="tab-historical">
         <section class="panel input-panel" aria-labelledby="analysis-setup-heading">
@@ -216,7 +200,6 @@
         <section class="panel input-panel" aria-labelledby="live-setup-heading">
           <div class="panel-head">
             <h2 id="live-setup-heading">Live Setup</h2>
-            <p class="panel-note">Rolling window, refreshed every 5 minutes while this tab is active.</p>
           </div>
           <form id="live-analysis-form" novalidate>
             <div class="field-grid setup-row">
