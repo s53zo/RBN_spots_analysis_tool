@@ -63,6 +63,8 @@ const ui = {
   chartsRoot: document.querySelector("#charts-root"),
 };
 
+let html2CanvasLoadPromise = null;
+
 function formatNumber(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return String(value || 0);
@@ -882,222 +884,340 @@ function handleLegendBandClick(event) {
   renderAnalysisCharts();
 }
 
-async function copyCardAsImage(card, button) {
-  const drawRoundedRect = (ctx, x, y, width, height, radius) => {
-    const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + width, y, x + width, y + height, r);
-    ctx.arcTo(x + width, y + height, x, y + height, r);
-    ctx.arcTo(x, y + height, x, y, r);
-    ctx.arcTo(x, y, x + width, y, r);
-    ctx.closePath();
-  };
+function sanitizeFilenameToken(value, fallback = "item") {
+  const safe = String(value == null ? "" : value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return safe || fallback;
+}
 
-  const layoutChips = (ctx, chips, maxWidth, gap = 8, paddingX = 10) => {
-    const rows = [];
-    let row = [];
-    let rowWidth = 0;
-    for (const chip of chips) {
-      ctx.font = "600 13px Barlow, sans-serif";
-      const textWidth = ctx.measureText(chip.text).width;
-      const dotExtra = chip.dotColor ? 14 : 0;
-      const chipWidth = Math.ceil(textWidth + dotExtra + paddingX * 2);
-      const nextWidth = row.length ? rowWidth + gap + chipWidth : chipWidth;
-      if (row.length && nextWidth > maxWidth) {
-        rows.push(row);
-        row = [];
-        rowWidth = 0;
-      }
-      row.push({ ...chip, width: chipWidth });
-      rowWidth = row.length === 1 ? chipWidth : rowWidth + gap + chipWidth;
+function downloadBlobFile(blob, filename) {
+  if (!(blob instanceof Blob)) return;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename || "image.png";
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  setTimeout(() => URL.revokeObjectURL(url), 1200);
+}
+
+function canvasToBlobAsync(canvas, type = "image/png", quality) {
+  return new Promise((resolve, reject) => {
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      reject(new Error("Invalid canvas"));
+      return;
     }
-    if (row.length) rows.push(row);
-    return rows;
-  };
-
-  const drawChipRows = (ctx, rows, x, yStart, gap = 8, lineGap = 8) => {
-    let y = yStart;
-    const chipH = 26;
-    for (const row of rows) {
-      let xCur = x;
-      for (const chip of row) {
-        ctx.fillStyle = chip.bg;
-        ctx.strokeStyle = chip.border;
-        drawRoundedRect(ctx, xCur, y, chip.width, chipH, 13);
-        ctx.fill();
-        ctx.stroke();
-        let tx = xCur + 10;
-        if (chip.dotColor) {
-          ctx.fillStyle = chip.dotColor;
-          ctx.beginPath();
-          ctx.arc(xCur + 10, y + chipH / 2, 4, 0, Math.PI * 2);
-          ctx.fill();
-          tx += 11;
-        }
-        ctx.fillStyle = chip.textColor;
-        ctx.font = "600 13px Barlow, sans-serif";
-        ctx.fillText(chip.text, tx, y + 17);
-        xCur += chip.width + gap;
-      }
-      y += chipH + lineGap;
+    if (canvas.toBlob) {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Failed to create PNG blob"));
+      }, type, quality);
+      return;
     }
-    return y;
-  };
+    try {
+      const dataUrl = canvas.toDataURL(type, quality);
+      const payload = dataUrl.split(",")[1] || "";
+      const bytes = atob(payload);
+      const buffer = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i += 1) buffer[i] = bytes.charCodeAt(i);
+      resolve(new Blob([buffer], { type }));
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
 
-  const buildCardExportCanvas = (node) => {
-    const chartCanvas = node.querySelector(".rbn-signal-canvas");
-    if (!(chartCanvas instanceof HTMLCanvasElement) || !chartCanvas.width || !chartCanvas.height) return null;
+function loadImageFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Unable to load rendered SVG image"));
+    img.src = url;
+  });
+}
 
-    const title = node.querySelector(".rbn-signal-head h4")?.textContent?.trim() || "RBN skimmer";
-    const skimmer = node.querySelector(".rbn-signal-select option:checked")?.textContent?.trim() || "";
-    const meta = node.querySelector(".rbn-signal-meta")?.textContent?.trim() || "";
+function loadHtml2CanvasLibrary() {
+  if (typeof window.html2canvas === "function") {
+    return Promise.resolve(window.html2canvas);
+  }
+  if (html2CanvasLoadPromise) return html2CanvasLoadPromise;
+  html2CanvasLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+    script.async = true;
+    script.onload = () => {
+      if (typeof window.html2canvas === "function") {
+        resolve(window.html2canvas);
+      } else {
+        reject(new Error("html2canvas loaded but API is unavailable"));
+      }
+    };
+    script.onerror = () => reject(new Error("Failed to load html2canvas"));
+    document.head.appendChild(script);
+  }).catch((err) => {
+    html2CanvasLoadPromise = null;
+    throw err;
+  });
+  return html2CanvasLoadPromise;
+}
 
-    const bandChips = Array.from(node.querySelectorAll(".rbn-legend-toggle[data-band]"))
-      .filter((el) => String(el.getAttribute("data-band")) !== "__ALL__")
-      .map((el) => ({
-        text: String(el.textContent || "").trim(),
-        dotColor: String(el.querySelector("i")?.style?.background || ""),
-        bg: el.classList.contains("is-active") ? "#dce9ff" : "#edf3ff",
-        border: el.classList.contains("is-active") ? "#b7cdf1" : "#cbd9ef",
-        textColor: el.classList.contains("is-active") ? "#123c70" : "#27466e",
-      }));
+function copyComputedStyleToNode(sourceNode, targetNode) {
+  if (!(sourceNode instanceof Element) || !(targetNode instanceof Element)) return;
+  const computed = window.getComputedStyle(sourceNode);
+  for (let i = 0; i < computed.length; i += 1) {
+    const prop = computed[i];
+    targetNode.style.setProperty(prop, computed.getPropertyValue(prop), computed.getPropertyPriority(prop));
+  }
+}
 
-    const callChips = Array.from(node.querySelectorAll(".rbn-call-item")).map((el) => ({
-      text: String(el.textContent || "").trim().replace(/\s+/g, " "),
-      dotColor: "",
-      bg: "#ffffff",
-      border: "#d8e3f4",
-      textColor: "#214b7e",
-    }));
+function inlineComputedStylesDeep(sourceRoot, cloneRoot) {
+  if (!(sourceRoot instanceof Element) || !(cloneRoot instanceof Element)) return;
+  copyComputedStyleToNode(sourceRoot, cloneRoot);
+  const sourceChildren = Array.from(sourceRoot.children);
+  const cloneChildren = Array.from(cloneRoot.children);
+  const count = Math.min(sourceChildren.length, cloneChildren.length);
+  for (let i = 0; i < count; i += 1) {
+    inlineComputedStylesDeep(sourceChildren[i], cloneChildren[i]);
+  }
+}
 
-    const exportWidth = 1600;
-    const contentW = exportWidth - 56;
-    const chartW = contentW;
-    const chartH = Math.round((chartCanvas.height / chartCanvas.width) * chartW);
-    const leftColW = Math.floor((contentW - 20) / 2);
-    const rightColW = contentW - 20 - leftColW;
+function replaceCanvasWithImageSnapshots(sourceRoot, cloneRoot) {
+  if (!(sourceRoot instanceof Element) || !(cloneRoot instanceof Element)) return;
+  const sourceCanvases = Array.from(sourceRoot.querySelectorAll("canvas"));
+  const cloneCanvases = Array.from(cloneRoot.querySelectorAll("canvas"));
+  const count = Math.min(sourceCanvases.length, cloneCanvases.length);
+  for (let i = 0; i < count; i += 1) {
+    const sourceCanvas = sourceCanvases[i];
+    const cloneCanvas = cloneCanvases[i];
+    if (!(sourceCanvas instanceof HTMLCanvasElement) || !(cloneCanvas instanceof HTMLCanvasElement)) continue;
+    let dataUrl = "";
+    try {
+      dataUrl = sourceCanvas.toDataURL("image/png");
+    } catch {
+      dataUrl = "";
+    }
+    if (!dataUrl) continue;
+    const image = document.createElement("img");
+    image.src = dataUrl;
+    image.alt = sourceCanvas.getAttribute("aria-label") || "Graph image";
+    copyComputedStyleToNode(sourceCanvas, image);
+    const width = sourceCanvas.clientWidth || sourceCanvas.width || 1;
+    const height = sourceCanvas.clientHeight || sourceCanvas.height || 1;
+    image.style.width = `${Math.max(1, Math.round(width))}px`;
+    image.style.height = `${Math.max(1, Math.round(height))}px`;
+    image.width = Math.max(1, Math.round(width));
+    image.height = Math.max(1, Math.round(height));
+    image.style.display = "block";
+    cloneCanvas.replaceWith(image);
+  }
+}
 
-    const tmp = document.createElement("canvas");
-    const tmpCtx = tmp.getContext("2d");
-    if (!tmpCtx) return null;
-    const bandRows = layoutChips(tmpCtx, bandChips, leftColW);
-    const callRows = layoutChips(tmpCtx, callChips, rightColW);
-    const rowCount = Math.max(bandRows.length || 1, callRows.length || 1);
-    const legendRowsHeight = rowCount * 26 + Math.max(0, rowCount - 1) * 8;
-    const legendSectionH = 22 + legendRowsHeight + 12;
+function applyRbnSignalExportLayout(root) {
+  if (!(root instanceof Element)) return;
+  root.querySelectorAll(".rbn-signal-side").forEach((side) => {
+    side.style.overflowX = "visible";
+    side.style.overflowY = "visible";
+  });
+  root.querySelectorAll(".rbn-signal-legend").forEach((legend) => {
+    legend.style.overflowX = "visible";
+    legend.style.overflowY = "visible";
+    legend.style.flexWrap = "wrap";
+    legend.style.alignItems = "flex-start";
+  });
+  root.querySelectorAll(".rbn-signal-calls").forEach((calls) => {
+    calls.style.flexWrap = "wrap";
+    calls.style.alignItems = "flex-start";
+  });
+  root.querySelectorAll(".rbn-signal-legend-bands").forEach((bands) => {
+    bands.style.flexWrap = "wrap";
+    bands.style.overflow = "visible";
+    bands.style.whiteSpace = "normal";
+  });
+  root.querySelectorAll(".rbn-signal-calls-list").forEach((callsList) => {
+    callsList.style.flexWrap = "wrap";
+    callsList.style.overflow = "visible";
+    callsList.style.whiteSpace = "normal";
+  });
+}
 
-    const headerH = 68;
-    const totalH = 28 + headerH + chartH + 16 + legendSectionH + 28;
-    const exportCanvas = document.createElement("canvas");
-    exportCanvas.width = exportWidth;
-    exportCanvas.height = totalH;
-    const ctx = exportCanvas.getContext("2d");
-    if (!ctx) return null;
+async function renderElementToPngBlob(element, options = {}) {
+  if (!(element instanceof HTMLElement)) {
+    throw new Error("Element not found");
+  }
+  const rect = element.getBoundingClientRect();
+  const baseWidth = Math.max(1, Math.ceil(rect.width || element.offsetWidth || 1));
+  const clone = element.cloneNode(true);
+  if (!(clone instanceof HTMLElement)) {
+    throw new Error("Unable to clone element");
+  }
+  inlineComputedStylesDeep(element, clone);
+  replaceCanvasWithImageSnapshots(element, clone);
+  if (typeof options.prepareClone === "function") {
+    options.prepareClone(clone);
+  }
 
+  const host = document.createElement("div");
+  host.style.position = "fixed";
+  host.style.left = "-100000px";
+  host.style.top = "0";
+  host.style.opacity = "0";
+  host.style.pointerEvents = "none";
+  host.style.zIndex = "-1";
+  host.style.width = `${baseWidth}px`;
+  clone.style.width = `${baseWidth}px`;
+  clone.style.maxWidth = `${baseWidth}px`;
+  host.appendChild(clone);
+  document.body.appendChild(host);
+  let width = baseWidth;
+  let height = Math.max(1, Math.ceil(element.getBoundingClientRect().height || element.offsetHeight || 1));
+  let serialized = "";
+  try {
+    if (document.fonts && document.fonts.ready) {
+      try {
+        await document.fonts.ready;
+      } catch {
+        // Continue even when fonts cannot be awaited.
+      }
+    }
+
+    const measureRect = clone.getBoundingClientRect();
+    width = Math.max(1, Math.ceil(measureRect.width || baseWidth));
+    height = Math.max(1, Math.ceil(measureRect.height || clone.scrollHeight || element.scrollHeight || 1));
+
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+    wrapper.style.width = `${width}px`;
+    wrapper.style.height = `${height}px`;
+    wrapper.style.boxSizing = "border-box";
+    wrapper.appendChild(clone);
+    serialized = new XMLSerializer().serializeToString(wrapper);
+  } finally {
+    if (host.parentNode) host.parentNode.removeChild(host);
+  }
+  if (!serialized) throw new Error("Failed to serialize graph content");
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<foreignObject x="0" y="0" width="100%" height="100%">${serialized}</foreignObject></svg>`;
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  try {
+    const img = await loadImageFromUrl(svgUrl);
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * dpr));
+    canvas.height = Math.max(1, Math.round(height * dpr));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas context unavailable");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    return await canvasToBlobAsync(canvas, "image/png");
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
 
-    let y = 28;
-    ctx.fillStyle = "#173a67";
-    ctx.font = "700 26px Space Grotesk, Barlow, sans-serif";
-    ctx.fillText(title, 28, y + 22);
-    if (skimmer) {
-      ctx.fillStyle = "#35557d";
-      ctx.font = "600 16px Barlow, sans-serif";
-      ctx.fillText(`Skimmer: ${skimmer}`, 28, y + 48);
-    }
-    if (meta) {
-      ctx.fillStyle = "#5b6e88";
-      ctx.font = "500 14px Barlow, sans-serif";
-      ctx.fillText(meta, 28, y + 64);
-    }
-
-    y += headerH;
-    ctx.fillStyle = "#fcfeff";
-    ctx.strokeStyle = "#d6e0ee";
-    drawRoundedRect(ctx, 28, y, chartW, chartH, 10);
-    ctx.fill();
-    ctx.stroke();
-    ctx.drawImage(chartCanvas, 34, y + 6, chartW - 12, chartH - 12);
-
-    y += chartH + 16;
-    ctx.fillStyle = "#f8fbff";
-    ctx.strokeStyle = "#d6e0ee";
-    drawRoundedRect(ctx, 28, y, contentW, legendSectionH, 10);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = "#3a5576";
-    ctx.font = "700 13px Barlow, sans-serif";
-    ctx.fillText("BANDS (click to filter)", 40, y + 18);
-    ctx.fillText("CALLSIGNS", 40 + leftColW + 20, y + 18);
-
-    drawChipRows(ctx, bandRows, 40, y + 28);
-    drawChipRows(ctx, callRows, 40 + leftColW + 20, y + 28);
-
-    return exportCanvas;
-  };
-
-  const canvasToBlob = (canvas) =>
-    new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob || null), "image/png");
+async function renderElementToPngBlobWithHtml2Canvas(element) {
+  if (!(element instanceof HTMLElement)) {
+    throw new Error("Element not found");
+  }
+  const html2canvas = await loadHtml2CanvasLibrary();
+  const token = `rbn-export-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  element.dataset.exportToken = token;
+  try {
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const canvas = await html2canvas(element, {
+      backgroundColor: "#ffffff",
+      scale: dpr,
+      useCORS: true,
+      logging: false,
+      onclone: (doc) => {
+        const clone = doc.querySelector(`[data-export-token="${token}"]`);
+        if (clone) applyRbnSignalExportLayout(clone);
+      },
     });
+    return await canvasToBlobAsync(canvas, "image/png");
+  } finally {
+    delete element.dataset.exportToken;
+  }
+}
 
-  const downloadCanvasPng = (canvas, filename = "rbn-graph.png") => {
-    const dataUrl = canvas.toDataURL("image/png");
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  };
+async function copyImageBlobToClipboard(blob) {
+  if (!(blob instanceof Blob)) return false;
+  if (!(navigator.clipboard && navigator.clipboard.write) || typeof ClipboardItem === "undefined") {
+    return false;
+  }
+  try {
+    const item = new ClipboardItem({ [blob.type || "image/png"]: blob });
+    await navigator.clipboard.write([item]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  button.disabled = true;
+async function copyCardAsImage(card, button) {
+  if (!(card instanceof HTMLElement) || !(button instanceof HTMLButtonElement)) return;
+  const body = card.querySelector(".rbn-signal-body");
+  if (!(body instanceof HTMLElement)) {
+    button.dataset.state = "error";
+    button.title = "Graph not found";
+    return;
+  }
+
   const prevState = button.dataset.state || "";
   const prevTitle = button.title || "Copy as image";
   const prevText = button.textContent || "🖼";
+  const continent = String(card.querySelector(".rbn-signal-select")?.dataset.continent || "N/A").trim().toUpperCase() || "N/A";
+  const spotter = String(card.querySelector(".rbn-signal-select")?.value || "spotter").trim() || "spotter";
+  const filename = `rbn_compare_signal_${sanitizeFilenameToken(continent)}_${sanitizeFilenameToken(spotter)}.png`;
+
+  button.disabled = true;
+  button.dataset.state = "";
+  button.title = "Preparing image...";
+  button.textContent = "…";
 
   try {
-    const canvas = buildCardExportCanvas(card);
-    if (!canvas) throw new Error("Could not build image.");
-    const blob = await canvasToBlob(canvas);
-    if (!blob) throw new Error("Could not encode image.");
-
-    if (globalThis.isSecureContext && navigator?.clipboard?.write && globalThis?.ClipboardItem) {
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      button.dataset.state = "copied";
-      button.title = "Copied";
-      button.textContent = "✓";
-      setTimeout(() => {
-        button.dataset.state = prevState;
-        button.title = prevTitle;
-        button.textContent = prevText;
-      }, 1500);
-      return;
+    let blob = null;
+    try {
+      blob = await renderElementToPngBlob(body, {
+        prepareClone: applyRbnSignalExportLayout,
+      });
+    } catch (primaryErr) {
+      console.warn("Primary graph export failed, trying html2canvas fallback:", primaryErr);
+      blob = await renderElementToPngBlobWithHtml2Canvas(body);
     }
 
-    downloadCanvasPng(canvas, "rbn-graph.png");
-
-    button.dataset.state = "copied";
-    button.title = "Downloaded (clipboard unavailable)";
-    button.textContent = "↓";
-    setTimeout(() => {
-      button.dataset.state = prevState;
-      button.title = prevTitle;
-      button.textContent = prevText;
-    }, 1500);
-  } catch {
+    const copied = await copyImageBlobToClipboard(blob);
+    if (copied) {
+      button.dataset.state = "copied";
+      button.title = "Copied to clipboard";
+      button.textContent = "✓";
+    } else {
+      downloadBlobFile(blob, filename);
+      button.dataset.state = "copied";
+      button.title = "Clipboard unavailable, PNG downloaded";
+      button.textContent = "↓";
+    }
+  } catch (err) {
+    console.error("Copy graph as image failed:", err);
     button.dataset.state = "error";
-    button.title = "Copy failed";
+    button.title = "Unable to copy or download image";
     button.textContent = "!";
+  } finally {
     setTimeout(() => {
       button.dataset.state = prevState;
       button.title = prevTitle;
       button.textContent = prevText;
     }, 1500);
-  } finally {
     button.disabled = false;
   }
 }
