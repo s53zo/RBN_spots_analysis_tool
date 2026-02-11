@@ -691,9 +691,8 @@ function renderAnalysisCharts() {
       return `
         <article class="rbn-signal-card">
           <div class="rbn-signal-head">
-            <h4>${continentLabel(continent)} top skimmer</h4>
-            <label class="rbn-signal-picker">
-              <span>Skimmer</span>
+            <h4>${continentLabel(continent)} skimmer</h4>
+            <label class="rbn-signal-picker" aria-label="${continentLabel(continent)} skimmer selector">
               <select class="rbn-signal-select" data-continent="${continent}" ${list.length ? "" : "disabled"}>
                 ${options}
               </select>
