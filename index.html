@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RBN Signal Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <main class="app-shell">
+      <header class="hero">
+        <p class="kicker">RBN Analysis Tool</p>
+        <h1>RBN Signal Comparative Analysis</h1>
+        <p class="hero-sub">
+          Select one or two UTC dates, enter your callsign, and optionally compare against up to three other callsigns.
+        </p>
+      </header>
+
+      <section class="panel input-panel" aria-labelledby="analysis-setup-heading">
+        <div class="panel-head">
+          <h2 id="analysis-setup-heading">Setup</h2>
+          <p class="panel-note">Dates are global for all callsigns in this run.</p>
+        </div>
+
+        <form id="analysis-form" novalidate>
+          <div class="field-grid">
+            <div class="field">
+              <label for="date-primary">Date 1 (UTC) <span class="req">*</span></label>
+              <input id="date-primary" name="datePrimary" type="date" required />
+            </div>
+            <div class="field">
+              <label for="date-secondary">Date 2 (UTC, optional)</label>
+              <input id="date-secondary" name="dateSecondary" type="date" />
+            </div>
+            <div class="field">
+              <label for="call-primary">Primary callsign <span class="req">*</span></label>
+              <input
+                id="call-primary"
+                name="callPrimary"
+                type="text"
+                maxlength="20"
+                inputmode="text"
+                autocomplete="off"
+                placeholder="S53ZO"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="call-compare-1">Compare callsign 1</label>
+              <input
+                id="call-compare-1"
+                name="callCompare1"
+                type="text"
+                maxlength="20"
+                inputmode="text"
+                autocomplete="off"
+                placeholder="K1ABC"
+              />
+            </div>
+            <div class="field">
+              <label for="call-compare-2">Compare callsign 2</label>
+              <input
+                id="call-compare-2"
+                name="callCompare2"
+                type="text"
+                maxlength="20"
+                inputmode="text"
+                autocomplete="off"
+                placeholder="DL1XYZ"
+              />
+            </div>
+            <div class="field">
+              <label for="call-compare-3">Compare callsign 3</label>
+              <input
+                id="call-compare-3"
+                name="callCompare3"
+                type="text"
+                maxlength="20"
+                inputmode="text"
+                autocomplete="off"
+                placeholder="JA1AAA"
+              />
+            </div>
+          </div>
+
+          <div class="actions-row">
+            <button id="start-analysis" class="btn-primary" type="submit" disabled>Start analysis</button>
+            <button id="reset-analysis" class="btn-ghost" type="reset">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel status-panel" aria-live="polite">
+        <div id="status-pill" class="status-pill" data-state="idle">Idle</div>
+        <p id="status-message" class="status-message">Enter required fields to enable analysis.</p>
+      </section>
+
+      <section class="panel summary-panel" aria-labelledby="run-summary-heading">
+        <h2 id="run-summary-heading">Run Summary</h2>
+        <dl id="run-summary" class="summary-grid">
+          <div>
+            <dt>Dates</dt>
+            <dd>-</dd>
+          </div>
+          <div>
+            <dt>Primary</dt>
+            <dd>-</dd>
+          </div>
+          <div>
+            <dt>Comparisons</dt>
+            <dd>-</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>Not started</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="panel charts-panel" aria-labelledby="charts-heading">
+        <div class="panel-head">
+          <h2 id="charts-heading">Signal Charts</h2>
+          <p class="panel-note">Charts appear after analysis starts.</p>
+        </div>
+        <div id="charts-root" class="charts-root empty-state">
+          <p>No analysis results yet.</p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="app.mjs"></script>
+  </body>
+</html>
