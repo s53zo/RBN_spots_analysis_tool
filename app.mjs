@@ -32,6 +32,10 @@ const state = {
     status: "ready",
     baseMessage: "",
   },
+  datePickers: {
+    primary: null,
+    secondary: null,
+  },
   chart: {
     selectedBands: [],
     selectedByContinent: {},
@@ -45,6 +49,8 @@ const ui = {
   form: document.querySelector("#analysis-form"),
   datePrimary: document.querySelector("#date-primary"),
   dateSecondary: document.querySelector("#date-secondary"),
+  datePrimaryPicker: document.querySelector("#date-primary-picker"),
+  dateSecondaryPicker: document.querySelector("#date-secondary-picker"),
   callPrimary: document.querySelector("#call-primary"),
   callCompare1: document.querySelector("#call-compare-1"),
   callCompare2: document.querySelector("#call-compare-2"),
@@ -98,8 +104,41 @@ function slotLineSample(slotId) {
   return "- · -";
 }
 
+function parseDateInputToIso(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  let year = "";
+  let month = "";
+  let day = "";
+  let match = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (match) {
+    day = match[1];
+    month = match[2];
+    year = match[3];
+  } else {
+    match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return "";
+    year = match[1];
+    month = match[2];
+    day = match[3];
+  }
+
+  const iso = `${year}-${month}-${day}`;
+  const date = new Date(`${iso}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime())) return "";
+  const normalized = date.toISOString().slice(0, 10);
+  return normalized === iso ? iso : "";
+}
+
+function formatIsoToDisplay(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""))) return "";
+  const [year, month, day] = String(iso).split("-");
+  return `${day}-${month}-${year}`;
+}
+
 function collectInputModel() {
-  const dates = [ui.datePrimary.value, ui.dateSecondary.value].filter(Boolean);
+  const dates = [parseDateInputToIso(ui.datePrimary.value), parseDateInputToIso(ui.dateSecondary.value)].filter(Boolean);
   const calls = [
     normalizeCall(ui.callPrimary.value),
     normalizeCall(ui.callCompare1.value),
@@ -123,16 +162,64 @@ function addUtcDay(isoDate, daysToAdd = 1) {
 }
 
 function suggestSecondaryDateFromPrimary() {
-  const primary = String(ui.datePrimary.value || "");
-  if (!primary) {
-    ui.dateSecondary.min = "";
+  const primaryIso = parseDateInputToIso(ui.datePrimary.value);
+  if (!primaryIso) {
+    if (state.datePickers.secondary) {
+      state.datePickers.secondary.set("minDate", null);
+    }
     return;
   }
-  const suggested = addUtcDay(primary, 1);
-  ui.dateSecondary.min = suggested || primary;
-  const secondary = String(ui.dateSecondary.value || "");
-  if (!secondary || secondary <= primary) {
-    ui.dateSecondary.value = suggested || "";
+
+  const suggestedIso = addUtcDay(primaryIso, 1);
+  const minIso = suggestedIso || primaryIso;
+  if (state.datePickers.secondary) {
+    state.datePickers.secondary.set("minDate", minIso);
+  }
+
+  const secondaryIso = parseDateInputToIso(ui.dateSecondary.value);
+  if (!secondaryIso || secondaryIso <= primaryIso) {
+    ui.dateSecondary.value = formatIsoToDisplay(suggestedIso);
+    if (state.datePickers.secondary && suggestedIso) {
+      state.datePickers.secondary.setDate(suggestedIso, false, "Y-m-d");
+    }
+  }
+}
+
+function initDatePickers() {
+  const flatpickrFn = globalThis?.flatpickr;
+  if (typeof flatpickrFn !== "function") return;
+
+  const baseOptions = {
+    dateFormat: "d-m-Y",
+    allowInput: true,
+    disableMobile: true,
+    clickOpens: true,
+    static: false,
+  };
+
+  state.datePickers.primary = flatpickrFn(ui.datePrimary, {
+    ...baseOptions,
+    onChange: () => {
+      suggestSecondaryDateFromPrimary();
+      refreshFormState();
+    },
+    onClose: () => refreshFormState(),
+  });
+
+  state.datePickers.secondary = flatpickrFn(ui.dateSecondary, {
+    ...baseOptions,
+    onChange: () => refreshFormState(),
+    onClose: () => refreshFormState(),
+  });
+
+  if (ui.datePrimaryPicker) {
+    ui.datePrimaryPicker.addEventListener("click", () => state.datePickers.primary?.open());
+  }
+  if (ui.dateSecondaryPicker) {
+    ui.dateSecondaryPicker.addEventListener("click", () => {
+      suggestSecondaryDateFromPrimary();
+      state.datePickers.secondary?.open();
+    });
   }
 }
 
@@ -704,6 +791,8 @@ function handleInput() {
 function handleReset() {
   queueMicrotask(() => {
     clearRetryCountdown();
+    state.datePickers.primary?.clear();
+    state.datePickers.secondary?.clear();
     state.analysis = null;
     state.chart.selectedBands = [];
     state.chart.selectedByContinent = {};
@@ -841,6 +930,7 @@ function preloadBackgroundData() {
 }
 
 bindEvents();
+initDatePickers();
 preloadBackgroundData();
 resetLoadChecks();
 renderAnalysisCharts();
