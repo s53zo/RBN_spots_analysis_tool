@@ -508,15 +508,8 @@ function bindChartInteractions(slots) {
       }
       const band = normalizeBandToken(token);
       if (!band) return;
-      const current = getActiveBandFilterSet();
-      if (!current.size) {
-        current.add(band);
-      } else if (current.has(band)) {
-        current.delete(band);
-      } else {
-        current.add(band);
-      }
-      state.chart.selectedBands = sortBands(Array.from(current));
+      // Single-select behavior: clicking a band focuses that one band only.
+      state.chart.selectedBands = [band];
       renderAnalysisCharts();
     });
   }
