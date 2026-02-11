@@ -1,18 +1,10 @@
 import { normalizeBandToken, normalizeCall, normalizeSpotterBase } from "./rbn-normalize.mjs";
+import { getContinentForCall } from "./cty-lookup.mjs";
 
-const CONTINENT_ORDER = ["NA", "SA", "EU", "AF", "AS", "OC", "N/A"];
+const CONTINENT_ORDER = ["NA", "SA", "EU", "AF", "AS", "OC"];
 
 const indexCache = new Map();
 const rankingCache = new Map();
-
-const CONTINENT_HINTS = [
-  { continent: "NA", re: /^(K|N|W|A[A-L]|V[A-G]|VE|XE|KP|CO|CM|C6|V3|TG|TI|HP|YN|YN|ZF|8P)/ },
-  { continent: "SA", re: /^(LU|LW|AY|AZ|CX|CE|OA|YV|HK|PY|PP|PR|PU|P[Q-U]|CP|ZP|HC|HC|TI9|FY|P4|PJ)/ },
-  { continent: "EU", re: /^(9A|9H|CT|CU|DL|DA|DB|DC|DD|DE|DF|DG|DH|DJ|DK|DM|DN|DO|F|G|M|2E|EI|GW|GI|GM|GD|I|IS|IZ|OE|OK|OM|O[N-W]|PA|PB|PC|PD|PE|PF|PG|PH|PI|PJ2|S5|S[0-9]|SP|SQ|SR|SM|LA|LB|LC|LY|YL|ES|ER|HA|HB|HE|HF|HG|LZ|YO|YU|E7|Z3|SV|SX|OH|OJ|UA[1-6]|R[1-6])/ },
-  { continent: "AF", re: /^(ZS|ZT|ZU|5[H-NR]|7X|CN|3V|SU|9J|9Q|5A|5V|TU|D2|ET|TR|TT|V5|A2|C5|C9)/ },
-  { continent: "AS", re: /^(JA|JE|JF|JG|JH|JI|JJ|JK|JL|JM|JN|JO|JP|JQ|JR|JS|JT|BY|BA|BD|BG|BH|BI|BL|BM|BN|BO|BP|BQ|BV|HL|DS|DT|VU|4X|4J|4L|UN|EX|EY|EP|A[4-9]|HZ|YB0|YB1|9M2|9M6|DU|HS|E2|B[0-9]|VR)/ },
-  { continent: "OC", re: /^(VK|AX|ZL|E5|YB|YC|YD|YE|YF|YG|YH|9M6|P2|H4|A3|KH[2-9]|FO|FK)/ },
-];
 
 const BAND_ORDER_INDEX = new Map([
   "2190M",
@@ -84,10 +76,7 @@ function continentLabel(continent) {
 function inferContinentFromCall(call) {
   const normalized = normalizeCall(call || "");
   if (!normalized) return "N/A";
-  for (const hint of CONTINENT_HINTS) {
-    if (hint.re.test(normalized)) return hint.continent;
-  }
-  return "N/A";
+  return getContinentForCall(normalized) || "N/A";
 }
 
 function slotDataKey(slot) {
@@ -158,6 +147,7 @@ function getOrBuildRanking(slot, bandKey) {
     const count = normalizedBand ? entry.bandCounts.get(normalizedBand) || 0 : entry.totalCount || 0;
     if (!count) continue;
     const continent = entry.continent || "N/A";
+    if (continent === "N/A") continue;
     if (!byContinent.has(continent)) byContinent.set(continent, []);
     byContinent.get(continent).push({ spotter: entry.spotter, count });
   }

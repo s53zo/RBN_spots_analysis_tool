@@ -19,7 +19,7 @@
         <p class="kicker">RBN Analysis Tool</p>
         <h1>RBN Signal Comparative Analysis</h1>
         <p class="hero-sub">
-          Select one or two UTC dates, enter your callsign, and optionally compare against up to three other callsigns.
+          Pick up to two UTC dates, enter your callsign, and optionally compare with up to three others.
         </p>
       </header>
 
@@ -102,31 +102,6 @@
         <p id="status-message" class="status-message">Enter required fields to enable analysis.</p>
       </section>
 
-      <section class="panel summary-panel" aria-labelledby="run-summary-heading">
-        <h2 id="run-summary-heading">Run Summary</h2>
-        <dl id="run-summary" class="summary-grid">
-          <div>
-            <dt>Dates</dt>
-            <dd>-</dd>
-          </div>
-          <div>
-            <dt>Primary</dt>
-            <dd>-</dd>
-          </div>
-          <div>
-            <dt>Comparisons</dt>
-            <dd>-</dd>
-          </div>
-          <div>
-            <dt>Status</dt>
-            <dd>Not started</dd>
-          </div>
-        </dl>
-        <div id="run-summary-extra" class="summary-extra">
-          <p>No run metadata yet.</p>
-        </div>
-      </section>
-
       <section class="panel charts-panel" aria-labelledby="charts-heading">
         <div class="panel-head">
           <h2 id="charts-heading">Signal Charts</h2>
@@ -135,6 +110,33 @@
         <div id="charts-root" class="charts-root empty-state">
           <p>No analysis results yet.</p>
         </div>
+      </section>
+
+      <section class="panel summary-panel" aria-labelledby="run-summary-heading">
+        <details id="run-summary-details">
+          <summary id="run-summary-heading">Run Summary</summary>
+          <dl id="run-summary" class="summary-grid">
+            <div>
+              <dt>Dates</dt>
+              <dd>-</dd>
+            </div>
+            <div>
+              <dt>Primary</dt>
+              <dd>-</dd>
+            </div>
+            <div>
+              <dt>Comparisons</dt>
+              <dd>-</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>Not started</dd>
+            </div>
+          </dl>
+          <div id="run-summary-extra" class="summary-extra">
+            <p>No run metadata yet.</p>
+          </div>
+        </details>
       </section>
     </main>
 

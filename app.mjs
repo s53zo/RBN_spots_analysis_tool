@@ -1,6 +1,7 @@
 import { runRbnAnalysis } from "./src/rbn-orchestrator.mjs";
 import { normalizeBandToken, normalizeCall } from "./src/rbn-normalize.mjs";
 import { validateAnalysisInput } from "./src/input-validation.mjs";
+import { getCtyState, preloadCtyData } from "./src/cty-lookup.mjs";
 import {
   CONTINENT_ORDER,
   continentLabel,
@@ -51,6 +52,7 @@ const ui = {
   startButton: document.querySelector("#start-analysis"),
   statusPill: document.querySelector("#status-pill"),
   statusMessage: document.querySelector("#status-message"),
+  summaryDetails: document.querySelector("#run-summary-details"),
   summary: document.querySelector("#run-summary"),
   summaryExtra: document.querySelector("#run-summary-extra"),
   chartsRoot: document.querySelector("#charts-root"),
@@ -118,6 +120,28 @@ function collectInputModel() {
   };
 }
 
+function addUtcDay(isoDate, daysToAdd = 1) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(isoDate || ""))) return "";
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + daysToAdd);
+  return date.toISOString().slice(0, 10);
+}
+
+function suggestSecondaryDateFromPrimary() {
+  const primary = String(ui.datePrimary.value || "");
+  if (!primary) {
+    ui.dateSecondary.min = "";
+    return;
+  }
+  const suggested = addUtcDay(primary, 1);
+  ui.dateSecondary.min = suggested || primary;
+  const secondary = String(ui.dateSecondary.value || "");
+  if (!secondary || secondary <= primary) {
+    ui.dateSecondary.value = suggested || "";
+  }
+}
+
 const validateModel = validateAnalysisInput;
 
 function setStatus(status, message) {
@@ -177,6 +201,12 @@ function renderSummaryFromAnalysis() {
   }
 
   const durationSec = Math.max(0, Math.round((state.analysis.durationMs || 0) / 1000));
+  const cty = getCtyState();
+  const ctyText = cty.loaded
+    ? `cty.dat loaded (${cty.source || "unknown source"})`
+    : cty.status === "loading"
+      ? "cty.dat loading..."
+      : `cty.dat unavailable${cty.error ? ` (${escapeHtml(cty.error)})` : ""}`;
   const slotLines = state.analysis.slots
     .map((slot) => {
       if (slot.status === "ready") {
@@ -200,6 +230,7 @@ function renderSummaryFromAnalysis() {
 
   setSummaryExtra(`
     <p>Run duration: ${durationSec}s</p>
+    <p>${ctyText}</p>
     <p>Slot outcomes:</p>
     ${slotLines}
     <p>Selected skimmers:</p>
@@ -711,6 +742,7 @@ function handleReset() {
     state.chart.selectedBand = "";
     state.chart.selectedByContinent = {};
     teardownChartObservers();
+    suggestSecondaryDateFromPrimary();
     setStatus("idle", "Enter required fields to enable analysis.");
     renderAnalysisCharts();
     refreshFormState();
@@ -733,6 +765,10 @@ async function handleSubmit(event) {
 
   try {
     const result = await runRbnAnalysis(model);
+    if (runToken !== state.activeRunToken) return;
+
+    setStatus("running", "Loading continent prefixes (cty.dat)...");
+    await preloadCtyData();
     if (runToken !== state.activeRunToken) return;
 
     state.analysis = result;
@@ -776,12 +812,26 @@ async function handleSubmit(event) {
 }
 
 function bindEvents() {
+  ui.datePrimary.addEventListener("change", () => {
+    suggestSecondaryDateFromPrimary();
+    refreshFormState();
+  });
+  ui.dateSecondary.addEventListener("focus", suggestSecondaryDateFromPrimary);
   ui.form.addEventListener("input", handleInput);
   ui.form.addEventListener("submit", handleSubmit);
   ui.form.addEventListener("reset", handleReset);
 }
 
+function preloadBackgroundData() {
+  preloadCtyData().then(() => {
+    if (state.analysis) renderSummaryFromAnalysis();
+  }).catch(() => {
+    // Keep fallback continent inference if cty.dat is unavailable.
+  });
+}
+
 bindEvents();
+preloadBackgroundData();
 renderAnalysisCharts();
 refreshFormState();
 
