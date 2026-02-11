@@ -238,6 +238,14 @@ p {
   padding: 1rem;
 }
 
+.live-status-shell {
+  margin-top: 0.7rem;
+  border-top: 1px dashed #cad7e9;
+  padding-top: 0.55rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
 #analysis-form {
   display: grid;
   gap: 0.6rem;

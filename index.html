@@ -281,6 +281,21 @@
               </div>
             </div>
           </form>
+          <div class="live-status-shell" aria-live="polite">
+            <div id="live-status-pill" class="status-pill" data-state="idle">Idle</div>
+            <p id="live-status-message" class="status-message">Enter required fields to enable live analysis.</p>
+            <div class="hero-checks" aria-label="Live data loading progress">
+              <span id="live-check-fetch" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>RBN data</span
+              >
+              <span id="live-check-cty" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>cty.dat</span
+              >
+              <span id="live-check-charts" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>Charts</span
+              >
+            </div>
+          </div>
         </section>
 
         <section class="panel charts-panel" aria-labelledby="live-charts-heading">

@@ -1,6 +1,6 @@
-import { runRbnAnalysis } from "./src/rbn-orchestrator.mjs";
+import { runRbnAnalysis, runRbnLiveAnalysis } from "./src/rbn-orchestrator.mjs";
 import { normalizeBandToken, normalizeCall } from "./src/rbn-normalize.mjs";
-import { validateAnalysisInput } from "./src/input-validation.mjs";
+import { validateAnalysisInput, validateLiveInput } from "./src/input-validation.mjs";
 import { preloadCtyData } from "./src/cty-lookup.mjs";
 import {
   CONTINENT_ORDER,
@@ -46,19 +46,52 @@ const state = {
   },
 };
 
+const liveState = {
+  status: "idle",
+  windowHours: 24,
+  slots: {
+    A: { call: "" },
+    B: { call: "" },
+    C: { call: "" },
+    D: { call: "" },
+  },
+  activeRunToken: 0,
+  analysis: null,
+  chart: {
+    selectedBands: [],
+    selectedByContinent: {},
+    drawRaf: 0,
+    resizeObserver: null,
+    intersectionObserver: null,
+  },
+  refresh: {
+    timer: 0,
+    intervalMs: 5 * 60 * 1000,
+    inFlight: false,
+    lastModel: null,
+  },
+};
+
 const ui = {
   chapterTabs: Array.from(document.querySelectorAll("[data-chapter-tab]")),
   chapterHistorical: document.querySelector("#chapter-historical"),
   chapterLive: document.querySelector("#chapter-live"),
   chapterSkimmer: document.querySelector("#chapter-skimmer"),
   form: document.querySelector("#analysis-form"),
+  liveForm: document.querySelector("#live-analysis-form"),
   datePrimary: document.querySelector("#date-primary"),
   dateSecondary: document.querySelector("#date-secondary"),
   callPrimary: document.querySelector("#call-primary"),
   callCompare1: document.querySelector("#call-compare-1"),
   callCompare2: document.querySelector("#call-compare-2"),
   callCompare3: document.querySelector("#call-compare-3"),
+  liveWindow: document.querySelector("#live-window"),
+  liveCallPrimary: document.querySelector("#live-call-primary"),
+  liveCallCompare1: document.querySelector("#live-call-compare-1"),
+  liveCallCompare2: document.querySelector("#live-call-compare-2"),
+  liveCallCompare3: document.querySelector("#live-call-compare-3"),
   startButton: document.querySelector("#start-analysis"),
+  liveStartButton: document.querySelector("#start-live-analysis"),
   statusPill: document.querySelector("#status-pill"),
   statusMessage: document.querySelector("#status-message"),
   checkFetch: document.querySelector("#check-fetch"),
@@ -66,6 +99,13 @@ const ui = {
   checkCharts: document.querySelector("#check-charts"),
   chartsNote: document.querySelector("#charts-note"),
   chartsRoot: document.querySelector("#charts-root"),
+  liveStatusPill: document.querySelector("#live-status-pill"),
+  liveStatusMessage: document.querySelector("#live-status-message"),
+  liveCheckFetch: document.querySelector("#live-check-fetch"),
+  liveCheckCty: document.querySelector("#live-check-cty"),
+  liveCheckCharts: document.querySelector("#live-check-charts"),
+  liveChartsNote: document.querySelector("#live-charts-note"),
+  liveChartsRoot: document.querySelector("#live-charts-root"),
 };
 
 let html2CanvasLoadPromise = null;
@@ -83,6 +123,7 @@ function setActiveChapter(chapter) {
   if (ui.chapterHistorical) ui.chapterHistorical.hidden = normalized !== "historical";
   if (ui.chapterLive) ui.chapterLive.hidden = normalized !== "live";
   if (ui.chapterSkimmer) ui.chapterSkimmer.hidden = normalized !== "skimmer";
+  syncLiveRefreshTimer();
 }
 
 function trackCallsignEntryEvents(model) {
@@ -101,6 +142,12 @@ function trackCallsignEntryEvents(model) {
       value: 1,
     });
   }
+}
+
+function trackLiveRefreshEvent(eventName, fields = {}) {
+  const gtagFn = globalThis?.gtag;
+  if (typeof gtagFn !== "function") return;
+  gtagFn("event", eventName, fields);
 }
 
 function formatNumber(value) {
@@ -191,6 +238,21 @@ function collectInputModel() {
   };
 }
 
+function collectLiveInputModel() {
+  const calls = [
+    normalizeCall(ui.liveCallPrimary?.value),
+    normalizeCall(ui.liveCallCompare1?.value),
+    normalizeCall(ui.liveCallCompare2?.value),
+    normalizeCall(ui.liveCallCompare3?.value),
+  ];
+  const windowHours = Number(ui.liveWindow?.value || 24);
+  return {
+    windowHours,
+    primary: calls[0],
+    comparisons: calls.slice(1).filter(Boolean),
+  };
+}
+
 function addUtcDay(isoDate, daysToAdd = 1) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(isoDate || ""))) return "";
   const date = new Date(`${isoDate}T00:00:00Z`);
@@ -259,6 +321,20 @@ function setStartButtonMode(mode) {
   ui.startButton.dataset.state = mode || "idle";
 }
 
+function setLiveStatus(status, message) {
+  liveState.status = status;
+  if (!ui.liveStatusPill || !ui.liveStatusMessage) return;
+  ui.liveStatusPill.dataset.state = status;
+  ui.liveStatusPill.textContent =
+    status === "ready" ? "Ready" : status === "running" ? "Running" : status === "error" ? "Error" : "Idle";
+  ui.liveStatusMessage.textContent = message;
+}
+
+function setLiveStartButtonMode(mode) {
+  if (!ui.liveStartButton) return;
+  ui.liveStartButton.dataset.state = mode || "idle";
+}
+
 function setLoadCheck(node, status) {
   if (!node) return;
   node.dataset.state = status;
@@ -279,6 +355,12 @@ function resetLoadChecks() {
   setLoadCheck(ui.checkFetch, "pending");
   setLoadCheck(ui.checkCty, "pending");
   setLoadCheck(ui.checkCharts, "pending");
+}
+
+function resetLiveLoadChecks() {
+  setLoadCheck(ui.liveCheckFetch, "pending");
+  setLoadCheck(ui.liveCheckCty, "pending");
+  setLoadCheck(ui.liveCheckCharts, "pending");
 }
 
 function clearRetryCountdown() {
@@ -318,6 +400,14 @@ function syncStateFromModel(model) {
   state.slots.B.call = model.comparisons[0] || "";
   state.slots.C.call = model.comparisons[1] || "";
   state.slots.D.call = model.comparisons[2] || "";
+}
+
+function syncLiveStateFromModel(model) {
+  liveState.windowHours = Number(model?.windowHours || 24);
+  liveState.slots.A.call = model?.primary || "";
+  liveState.slots.B.call = model?.comparisons?.[0] || "";
+  liveState.slots.C.call = model?.comparisons?.[1] || "";
+  liveState.slots.D.call = model?.comparisons?.[2] || "";
 }
 
 function teardownChartObservers() {
@@ -776,6 +866,284 @@ function renderAnalysisCharts() {
   bindChartInteractions(slots);
 }
 
+function teardownLiveChartObservers() {
+  if (liveState.chart.resizeObserver) {
+    liveState.chart.resizeObserver.disconnect();
+    liveState.chart.resizeObserver = null;
+  }
+  if (liveState.chart.intersectionObserver) {
+    liveState.chart.intersectionObserver.disconnect();
+    liveState.chart.intersectionObserver = null;
+  }
+  if (liveState.chart.drawRaf) {
+    cancelAnimationFrame(liveState.chart.drawRaf);
+    liveState.chart.drawRaf = 0;
+  }
+}
+
+function getLiveReadySlots() {
+  return (liveState.analysis?.slots || []).filter((slot) => slot.status === "ready");
+}
+
+function getLiveActiveBandFilterSet() {
+  return new Set((liveState.chart.selectedBands || []).map((band) => normalizeBandToken(band)).filter(Boolean));
+}
+
+function drawLiveCharts(slots) {
+  const canvases = Array.from(ui.liveChartsRoot.querySelectorAll(".rbn-signal-canvas")).filter((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement)) return false;
+    if (!liveState.chart.intersectionObserver) return true;
+    return canvas.dataset.visible === "1";
+  });
+  if (!canvases.length) return;
+
+  const { minTs, maxTs } = getGlobalTimeRange(slots);
+  const availableBands = getAvailableBands(slots);
+  const bandFilterSet = getLiveActiveBandFilterSet();
+
+  for (const canvas of canvases) {
+    const card = canvas.closest(".rbn-signal-card");
+    const continent = String(canvas.dataset.continent || "N/A").toUpperCase();
+    const spotter = String(canvas.dataset.spotter || "");
+
+    if (!spotter) {
+      drawRbnSignalCanvas(canvas, {
+        title: `${continentLabel(continent)} · no skimmer`,
+        minTs,
+        maxTs,
+        minY: -30,
+        maxY: 40,
+        series: [],
+        trendlines: [],
+      });
+      if (card) {
+        updateCardLegend(card, availableBands, bandFilterSet);
+        updateCardMeta(card, 0, null, null);
+      }
+      continue;
+    }
+
+    const model = computeSeriesForSpotter(slots, spotter, bandFilterSet);
+    let minY = Number(model.minSnr);
+    let maxY = Number(model.maxSnr);
+    if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+      minY = -30;
+      maxY = 40;
+    } else if (minY === maxY) {
+      minY -= 5;
+      maxY += 5;
+    } else {
+      const pad = Math.max(2, (maxY - minY) * 0.08);
+      minY -= pad;
+      maxY += pad;
+    }
+
+    const trendlines = buildTrendlines(model.series, minTs, maxTs);
+    const title = `${continentLabel(continent)} · ${spotter}`;
+
+    drawRbnSignalCanvas(canvas, {
+      title,
+      minTs,
+      maxTs,
+      minY,
+      maxY,
+      series: model.series,
+      trendlines,
+    });
+
+    if (card) {
+      updateCardLegend(card, availableBands, bandFilterSet);
+      updateCardMeta(card, model.pointTotal, model.minSnr, model.maxSnr);
+    }
+
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", `${title}. ${formatNumber(model.pointTotal)} points plotted.`);
+  }
+}
+
+function scheduleLiveChartDraw(slots) {
+  if (liveState.chart.drawRaf) return;
+  liveState.chart.drawRaf = requestAnimationFrame(() => {
+    liveState.chart.drawRaf = 0;
+    drawLiveCharts(slots);
+  });
+}
+
+function bindLiveChartInteractions(slots) {
+  teardownLiveChartObservers();
+
+  const selects = Array.from(ui.liveChartsRoot.querySelectorAll(".rbn-signal-select"));
+  for (const select of selects) {
+    select.addEventListener("change", (event) => {
+      const target = event.currentTarget;
+      const continent = String(target.dataset.continent || "N/A").toUpperCase();
+      const spotter = String(target.value || "");
+      liveState.chart.selectedByContinent[continent] = spotter;
+      const canvas = target.closest(".rbn-signal-card")?.querySelector(".rbn-signal-canvas");
+      if (canvas) canvas.dataset.spotter = spotter;
+      scheduleLiveChartDraw(slots);
+    });
+  }
+
+  const canvases = Array.from(ui.liveChartsRoot.querySelectorAll(".rbn-signal-canvas"));
+  if (typeof ResizeObserver === "function") {
+    liveState.chart.resizeObserver = new ResizeObserver(() => scheduleLiveChartDraw(slots));
+    for (const canvas of canvases) {
+      liveState.chart.resizeObserver.observe(canvas);
+    }
+  }
+
+  if (typeof IntersectionObserver === "function") {
+    liveState.chart.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const target = entry.target;
+          if (!(target instanceof HTMLCanvasElement)) continue;
+          target.dataset.visible = entry.isIntersecting ? "1" : "0";
+        }
+        scheduleLiveChartDraw(slots);
+      },
+      { root: null, threshold: 0.05, rootMargin: "120px 0px" },
+    );
+
+    for (const canvas of canvases) {
+      canvas.dataset.visible = "0";
+      liveState.chart.intersectionObserver.observe(canvas);
+    }
+  } else {
+    for (const canvas of canvases) {
+      canvas.dataset.visible = "1";
+    }
+  }
+
+  scheduleLiveChartDraw(slots);
+}
+
+function renderLiveChartFailures() {
+  const failed = (liveState.analysis?.slots || []).filter((slot) => slot.status === "error" || slot.status === "qrx");
+  if (!failed.length) return "";
+  return `
+    <div class="chart-failures">
+      ${failed
+        .map(
+          (slot) => {
+            if (slot.status === "qrx") {
+              const wait = Math.ceil(Math.max(0, Number(slot.retryAfterMs) || 0) / 1000);
+              const text = wait ? `Rate limited, retry in ~${wait}s` : "Rate limited";
+              return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${text}</p>`;
+            }
+            return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${escapeHtml(slot.error || "Failed")}</p>`;
+          },
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderLiveAnalysisCharts() {
+  if (ui.liveChartsNote) ui.liveChartsNote.hidden = Boolean(liveState.analysis);
+
+  if (!liveState.analysis) {
+    ui.liveChartsRoot.classList.add("empty-state");
+    ui.liveChartsRoot.innerHTML = "<p>No live analysis results yet.</p>";
+    setLoadCheck(ui.liveCheckCharts, "pending");
+    return;
+  }
+
+  const slots = getLiveReadySlots();
+  if (!slots.length) {
+    ui.liveChartsRoot.classList.remove("empty-state");
+    ui.liveChartsRoot.innerHTML = `
+      <div class="chart-empty">
+        <p>No successful slot data available.</p>
+        ${renderLiveChartFailures()}
+      </div>
+    `;
+    setLoadCheck(ui.liveCheckCharts, "error");
+    return;
+  }
+
+  const baseSlot = slots.find((slot) => slot.id === "A") || slots[0];
+  const activeBands = getLiveActiveBandFilterSet();
+  liveState.chart.selectedBands = sortBands(Array.from(activeBands));
+  const rankingBand = activeBands.size === 1 ? Array.from(activeBands)[0] : "";
+  const ranking = getOrBuildRanking(baseSlot, rankingBand);
+  const callsignLegend = renderCallsignLegend(slots);
+  const cardsOrder = CONTINENT_ORDER.map((continent) => {
+    const list = ranking?.byContinent.get(continent) || [];
+    return {
+      continent,
+      list,
+      topCount: list[0]?.count || 0,
+    };
+  }).sort((a, b) => {
+    if (b.topCount !== a.topCount) return b.topCount - a.topCount;
+    return continentSort(a.continent, b.continent);
+  });
+
+  const cardsHtml = cardsOrder
+    .map(({ continent, list }) => {
+      const saved = String(liveState.chart.selectedByContinent[continent] || "");
+      const selectedSpotter = saved && list.some((item) => item.spotter === saved) ? saved : list[0]?.spotter || "";
+      if (selectedSpotter) liveState.chart.selectedByContinent[continent] = selectedSpotter;
+
+      const options = list.length
+        ? list
+            .slice(0, 80)
+            .map(
+              (item) =>
+                `<option value="${escapeHtml(item.spotter)}" ${item.spotter === selectedSpotter ? "selected" : ""}>${escapeHtml(item.spotter)} (${formatNumber(item.count)})</option>`,
+            )
+            .join("")
+        : "<option value=''>No skimmers</option>";
+
+      const statusText = list.length ? "" : `No RBN spots found for ${continentLabel(continent)}.`;
+
+      return `
+        <article class="rbn-signal-card">
+          <div class="rbn-signal-head">
+            <h4>${continentLabel(continent)} skimmer</h4>
+            <label class="rbn-signal-picker" aria-label="${continentLabel(continent)} skimmer selector">
+              <select class="rbn-signal-select" data-continent="${continent}" ${list.length ? "" : "disabled"}>
+                ${options}
+              </select>
+            </label>
+            <button type="button" class="rbn-copy-btn" title="Copy as image" aria-label="Copy as image">Copy as image</button>
+            <span class="rbn-signal-status" ${list.length ? "hidden" : ""}>${statusText}</span>
+          </div>
+          <div class="rbn-signal-body">
+            <div class="rbn-signal-plot">
+              <canvas class="rbn-signal-canvas" data-continent="${continent}" data-spotter="${escapeHtml(selectedSpotter)}" data-height="280"></canvas>
+              <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
+            </div>
+            <div class="rbn-signal-side">
+              <div class="rbn-signal-legend">
+                <h5>Bands (click to filter)</h5>
+                <span class="rbn-signal-legend-bands"></span>
+              </div>
+              <div class="rbn-signal-calls">
+                <h5>Callsigns</h5>
+                <div class="rbn-signal-calls-list">
+                  ${callsignLegend}
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+
+  ui.liveChartsRoot.classList.remove("empty-state");
+  ui.liveChartsRoot.innerHTML = `
+    ${renderLiveChartFailures()}
+    <div class="rbn-signal-grid">${cardsHtml}</div>
+  `;
+
+  setLoadCheck(ui.liveCheckCharts, "ok");
+  bindLiveChartInteractions(slots);
+}
+
 function refreshFormState(options = {}) {
   const { silentStatus = false } = options;
   const model = collectInputModel();
@@ -824,6 +1192,165 @@ function handleReset() {
     renderAnalysisCharts();
     refreshFormState();
   });
+}
+
+function refreshLiveFormState(options = {}) {
+  const { silentStatus = false } = options;
+  const model = collectLiveInputModel();
+  const validation = validateLiveInput(model);
+  syncLiveStateFromModel(model);
+
+  if (liveState.status === "running") {
+    ui.liveStartButton.disabled = true;
+    setLiveStartButtonMode("running");
+    return { model, validation };
+  }
+
+  ui.liveStartButton.disabled = !validation.ok;
+  setLiveStartButtonMode(validation.ok ? "ready" : "idle");
+  if (!silentStatus) {
+    if (validation.ok) {
+      setLiveStatus("ready", validation.reason);
+    } else {
+      setLiveStatus("idle", validation.reason);
+    }
+  }
+  return { model, validation };
+}
+
+function handleLiveInput() {
+  refreshLiveFormState();
+}
+
+function clearLiveRefreshTimer() {
+  if (!liveState.refresh.timer) return;
+  clearInterval(liveState.refresh.timer);
+  liveState.refresh.timer = 0;
+}
+
+function shouldRunLiveRefreshTimer() {
+  return state.activeChapter === "live" && !document.hidden && Boolean(liveState.refresh.lastModel);
+}
+
+function triggerLiveRefresh(reason = "interval") {
+  if (!liveState.refresh.lastModel || liveState.refresh.inFlight) return;
+  runLiveAnalysis(liveState.refresh.lastModel, { source: reason });
+}
+
+function syncLiveRefreshTimer() {
+  if (!shouldRunLiveRefreshTimer()) {
+    clearLiveRefreshTimer();
+    return;
+  }
+  if (liveState.refresh.timer) return;
+  liveState.refresh.timer = setInterval(() => triggerLiveRefresh("interval"), liveState.refresh.intervalMs);
+}
+
+function handleLiveReset() {
+  queueMicrotask(() => {
+    liveState.analysis = null;
+    liveState.chart.selectedBands = [];
+    liveState.chart.selectedByContinent = {};
+    teardownLiveChartObservers();
+    liveState.refresh.lastModel = null;
+    liveState.refresh.inFlight = false;
+    clearLiveRefreshTimer();
+    resetLiveLoadChecks();
+    setLiveStatus("idle", "Enter required fields to enable live analysis.");
+    renderLiveAnalysisCharts();
+    refreshLiveFormState();
+  });
+}
+
+async function runLiveAnalysis(model, options = {}) {
+  const source = String(options.source || "manual");
+  liveState.refresh.inFlight = true;
+  const runToken = liveState.activeRunToken + 1;
+  liveState.activeRunToken = runToken;
+
+  resetLiveLoadChecks();
+  setLoadCheck(ui.liveCheckFetch, "loading");
+  setLiveStatus("running", source === "manual" ? "Fetching live RBN data..." : "Refreshing live RBN data...");
+  ui.liveStartButton.disabled = true;
+  setLiveStartButtonMode("running");
+
+  try {
+    const result = await runRbnLiveAnalysis(model);
+    if (runToken !== liveState.activeRunToken) return;
+    setLoadCheck(ui.liveCheckFetch, "ok");
+
+    setLoadCheck(ui.liveCheckCty, "loading");
+    const ctyState = await preloadCtyData();
+    if (runToken !== liveState.activeRunToken) return;
+    if (ctyState?.status === "ok") {
+      setLoadCheck(ui.liveCheckCty, "ok");
+    } else if (ctyState?.status === "loading") {
+      setLoadCheck(ui.liveCheckCty, "loading");
+    } else {
+      setLoadCheck(ui.liveCheckCty, "error");
+    }
+
+    liveState.analysis = result;
+    renderLiveAnalysisCharts();
+
+    const loaded = result.slots.filter((slot) => slot.status === "ready").length;
+    const failed = result.slots.filter((slot) => slot.status === "error" || slot.status === "qrx").length;
+    if (failed && loaded) {
+      setLiveStatus("ready", `Live update completed with partial results (${loaded} loaded, ${failed} failed).`);
+    } else if (failed && !loaded) {
+      setLiveStatus("error", "Live update failed for all callsigns.");
+    } else if (!result.hasAnyData) {
+      setLiveStatus("ready", "Live update completed but no RBN spots matched selected callsigns.");
+    } else {
+      setLiveStatus("ready", `Live update completed for ${loaded} callsign${loaded === 1 ? "" : "s"}.`);
+    }
+
+    trackLiveRefreshEvent("live_refresh_success", {
+      trigger: source,
+      window_hours: Number(result.windowHours || model.windowHours || 24),
+      callsign_count: 1 + (Array.isArray(model.comparisons) ? model.comparisons.length : 0),
+      slots_loaded: loaded,
+      duration_ms: Number(result.durationMs || 0),
+    });
+
+    liveState.refresh.lastModel = { ...model, comparisons: [...(model.comparisons || [])] };
+  } catch (error) {
+    if (runToken !== liveState.activeRunToken) return;
+    if (ui.liveCheckFetch?.dataset.state === "loading") {
+      setLoadCheck(ui.liveCheckFetch, "error");
+    }
+    if (ui.liveCheckCty?.dataset.state === "loading") {
+      setLoadCheck(ui.liveCheckCty, "error");
+    }
+    setLiveStatus("error", error?.message || "Live analysis run failed.");
+    trackLiveRefreshEvent("live_refresh_error", {
+      trigger: source,
+      window_hours: Number(model?.windowHours || 24),
+      callsign_count: 1 + (Array.isArray(model?.comparisons) ? model.comparisons.length : 0),
+      error_message: String(error?.message || "Live analysis run failed."),
+    });
+  } finally {
+    if (runToken === liveState.activeRunToken) {
+      liveState.refresh.inFlight = false;
+      const next = refreshLiveFormState({ silentStatus: true });
+      if (next.validation.ok && liveState.status !== "running") {
+        ui.liveStartButton.disabled = false;
+      }
+    }
+    syncLiveRefreshTimer();
+  }
+}
+
+async function handleLiveSubmit(event) {
+  event.preventDefault();
+  const { model, validation } = refreshLiveFormState({ silentStatus: true });
+  if (!validation.ok) {
+    setLiveStatus("error", validation.reason);
+    return;
+  }
+  trackCallsignEntryEvents(model);
+  liveState.refresh.lastModel = { ...model, comparisons: [...(model.comparisons || [])] };
+  await runLiveAnalysis(model, { source: "manual" });
 }
 
 async function handleSubmit(event) {
@@ -912,18 +1439,31 @@ function handleLegendBandClick(event) {
   const target = event.target;
   if (!(target instanceof Element)) return;
   const button = target.closest(".rbn-legend-toggle");
-  if (!button || !ui.chartsRoot.contains(button)) return;
+  if (!button) return;
+  const root = button.closest(".charts-root");
+  if (!root) return;
+  const isLive = root === ui.liveChartsRoot;
   const token = String(button.dataset.band || "");
   if (token === "__ALL__") {
-    state.chart.selectedBands = [];
-    renderAnalysisCharts();
+    if (isLive) {
+      liveState.chart.selectedBands = [];
+      renderLiveAnalysisCharts();
+    } else {
+      state.chart.selectedBands = [];
+      renderAnalysisCharts();
+    }
     return;
   }
   const band = normalizeBandToken(token);
   if (!band) return;
   // Single-select behavior: clicking a band focuses that one band only.
-  state.chart.selectedBands = [band];
-  renderAnalysisCharts();
+  if (isLive) {
+    liveState.chart.selectedBands = [band];
+    renderLiveAnalysisCharts();
+  } else {
+    state.chart.selectedBands = [band];
+    renderAnalysisCharts();
+  }
 }
 
 function sanitizeFilenameToken(value, fallback = "item") {
@@ -1268,7 +1808,9 @@ function handleCopyCardClick(event) {
   const target = event.target;
   if (!(target instanceof Element)) return;
   const button = target.closest(".rbn-copy-btn");
-  if (!button || !ui.chartsRoot.contains(button)) return;
+  if (!button) return;
+  const root = button.closest(".charts-root");
+  if (!root || (root !== ui.chartsRoot && root !== ui.liveChartsRoot)) return;
   const card = button.closest(".rbn-signal-card");
   if (!card) return;
   copyCardAsImage(card, button);
@@ -1298,8 +1840,14 @@ function bindEvents() {
   ui.form.addEventListener("input", handleInput);
   ui.form.addEventListener("submit", handleSubmit);
   ui.form.addEventListener("reset", handleReset);
+  ui.liveForm.addEventListener("input", handleLiveInput);
+  ui.liveForm.addEventListener("submit", handleLiveSubmit);
+  ui.liveForm.addEventListener("reset", handleLiveReset);
   ui.chartsRoot.addEventListener("click", handleLegendBandClick);
   ui.chartsRoot.addEventListener("click", handleCopyCardClick);
+  ui.liveChartsRoot.addEventListener("click", handleLegendBandClick);
+  ui.liveChartsRoot.addEventListener("click", handleCopyCardClick);
+  document.addEventListener("visibilitychange", syncLiveRefreshTimer);
   for (const tab of ui.chapterTabs) {
     tab.addEventListener("click", handleChapterTabClick);
   }
@@ -1316,7 +1864,10 @@ initDatePickers();
 preloadBackgroundData();
 setActiveChapter(state.activeChapter);
 resetLoadChecks();
+resetLiveLoadChecks();
 renderAnalysisCharts();
+renderLiveAnalysisCharts();
 refreshFormState();
+refreshLiveFormState();
 
 export { validateModel };
