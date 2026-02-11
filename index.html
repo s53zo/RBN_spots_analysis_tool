@@ -32,14 +32,6 @@
           <div>
             <p class="kicker">RBN Analysis Tool</p>
             <h1>RBN Signal Comparative Analysis</h1>
-            <p class="hero-sub">
-              Pick up to two UTC dates, enter your callsign, and optionally compare with up to three others.
-            </p>
-            <ol class="hero-steps">
-              <li>Choose one or two UTC dates.</li>
-              <li>Enter your callsign and optional comparison callsigns.</li>
-              <li>Start analysis.</li>
-            </ol>
           </div>
           <aside class="hero-status" aria-live="polite">
             <div id="status-pill" class="status-pill" data-state="idle">Idle</div>
@@ -94,6 +86,21 @@
           >
             Skimmer comparison
           </button>
+        </div>
+      </section>
+
+      <section class="panel chapter-copy-panel" aria-live="polite">
+        <div id="chapter-copy-historical" class="chapter-copy-block" data-chapter-copy="historical">
+          <p>Pick up to two UTC dates, enter your callsign, and optionally compare with up to three others.</p>
+          <p>Choose one or two UTC dates.</p>
+          <p>Enter your callsign and optional comparison callsigns.</p>
+          <p>Start analysis.</p>
+        </div>
+        <div id="chapter-copy-live" class="chapter-copy-block" data-chapter-copy="live" hidden>
+          <p>Rolling window, refreshed every 5 minutes while this tab is active.</p>
+        </div>
+        <div id="chapter-copy-skimmer" class="chapter-copy-block" data-chapter-copy="skimmer" hidden>
+          <p>Skimmer comparison is coming soon.</p>
         </div>
       </section>
 
@@ -284,17 +291,6 @@
           <div class="live-status-shell" aria-live="polite">
             <div id="live-status-pill" class="status-pill" data-state="idle">Idle</div>
             <p id="live-status-message" class="status-message">Enter required fields to enable live analysis.</p>
-            <div class="hero-checks" aria-label="Live data loading progress">
-              <span id="live-check-fetch" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>RBN data</span
-              >
-              <span id="live-check-cty" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>cty.dat</span
-              >
-              <span id="live-check-charts" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>Charts</span
-              >
-            </div>
           </div>
         </section>
 

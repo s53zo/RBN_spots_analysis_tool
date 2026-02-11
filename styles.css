@@ -187,38 +187,63 @@ p {
 }
 
 .chapter-nav-panel {
-  padding: 0.5rem;
+  padding: 0.7rem;
 }
 
 .chapter-tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.35rem;
-  overflow-x: auto;
-  padding-bottom: 0.15rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+  max-width: 24rem;
+  margin-inline: auto;
 }
 
 .chapter-tab {
-  min-height: 2.2rem;
-  min-width: 8rem;
-  border-radius: 0.62rem;
-  border: 1px solid var(--border);
-  background: #edf3fb;
-  color: #2f4768;
-  font-size: 0.82rem;
+  min-height: 3rem;
+  width: 100%;
+  border-radius: 0.72rem;
+  border: 1px solid transparent;
+  color: #ffffff;
+  font-size: 0.95rem;
   font-weight: 700;
-  padding: 0.5rem 0.8rem;
-  white-space: nowrap;
+  padding: 0.65rem 1rem;
+  box-shadow: 0 10px 20px rgba(14, 35, 66, 0.15);
+  opacity: 0.78;
+}
+
+.chapter-tab[data-chapter-tab="historical"] {
+  background: linear-gradient(135deg, #2a70c2, #1b4f8a);
+}
+
+.chapter-tab[data-chapter-tab="live"] {
+  background: linear-gradient(135deg, #1e9f66, #0f7449);
+}
+
+.chapter-tab[data-chapter-tab="skimmer"] {
+  background: linear-gradient(135deg, #d7882a, #aa6114);
 }
 
 .chapter-tab:hover {
-  background: #e4edf9;
+  opacity: 0.92;
 }
 
 .chapter-tab.is-active {
-  background: #d8e7fb;
-  border-color: #b8cde9;
-  color: #1c395f;
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.85);
+  transform: translateY(-1px);
+}
+
+.chapter-copy-panel {
+  padding: 0.7rem 0.9rem;
+}
+
+.chapter-copy-block {
+  max-width: 78ch;
+  margin-inline: auto;
+  display: grid;
+  gap: 0.2rem;
+  color: #294569;
+  font-size: 0.95rem;
 }
 
 .chapter-pane {
