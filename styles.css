@@ -115,12 +115,7 @@ p {
   margin-left: 0.45rem;
 }
 
-.hero-step-run {
-  display: grid;
-  gap: 0.28rem;
-}
-
-.hero-step-run .hero-checks {
+.hero-status .hero-checks {
   margin-left: 0;
 }
 
@@ -203,7 +198,7 @@ p {
 
 .setup-row {
   grid-auto-flow: column;
-  grid-auto-columns: minmax(10rem, 1fr);
+  grid-auto-columns: minmax(7rem, 1fr);
   overflow-x: auto;
   padding-bottom: 0.25rem;
 }
@@ -211,7 +206,7 @@ p {
 .field {
   display: grid;
   gap: 0.35rem;
-  min-width: 10rem;
+  min-width: 7rem;
 }
 
 .field label {
@@ -220,7 +215,7 @@ p {
 }
 
 .field-actions {
-  min-width: 13.2rem;
+  min-width: 9.2rem;
 }
 
 .req {
@@ -229,13 +224,14 @@ p {
 
 input[type="date"],
 input[type="text"] {
-  min-height: 2.75rem;
+  min-height: 1.95rem;
   border: 1px solid var(--border);
-  border-radius: 0.65rem;
+  border-radius: 0.46rem;
   background: var(--surface-muted);
   color: var(--text);
-  padding-inline: 0.8rem;
-  font: inherit;
+  padding-inline: 0.56rem;
+  font-family: inherit;
+  font-size: 0.9rem;
 }
 
 input::placeholder {
@@ -607,8 +603,10 @@ button {
   background: #f8fbff;
   padding: 0.5rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.55rem;
   align-content: start;
+  align-items: start;
 }
 
 .rbn-signal-legend h5,
@@ -668,11 +666,12 @@ button {
 .rbn-signal-calls-list {
   display: grid;
   gap: 0.28rem;
+  justify-items: end;
 }
 
 .rbn-call-item {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto auto auto;
   align-items: center;
   gap: 0.35rem;
   font-size: 0.78rem;
@@ -680,6 +679,15 @@ button {
   border-radius: 0.55rem;
   background: #fff;
   padding: 0.2rem 0.38rem;
+}
+
+.rbn-signal-legend {
+  justify-items: start;
+}
+
+.rbn-signal-calls {
+  justify-self: end;
+  text-align: right;
 }
 
 .rbn-call-name {
@@ -697,9 +705,17 @@ button {
   letter-spacing: 0.05em;
 }
 
-@media (min-width: 64rem) {
-  .rbn-signal-body {
-    grid-template-columns: minmax(0, 1fr) 14.6rem;
-    align-items: start;
+@media (max-width: 52rem) {
+  .rbn-signal-side {
+    grid-template-columns: 1fr;
+  }
+
+  .rbn-signal-calls {
+    justify-self: start;
+    text-align: left;
+  }
+
+  .rbn-signal-calls-list {
+    justify-items: start;
   }
 }

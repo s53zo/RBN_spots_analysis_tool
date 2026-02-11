@@ -26,25 +26,23 @@
             <ol class="hero-steps">
               <li>Choose one or two UTC dates.</li>
               <li>Enter your callsign and optional comparison callsigns.</li>
-              <li class="hero-step-run">
-                <span>Start analysis</span>
-                <span class="hero-checks" aria-label="Data loading progress">
-                  <span id="check-fetch" class="hero-check" data-state="pending"
-                    ><span class="hero-check-mark" aria-hidden="true">○</span>RBN data</span
-                  >
-                  <span id="check-cty" class="hero-check" data-state="pending"
-                    ><span class="hero-check-mark" aria-hidden="true">○</span>cty.dat</span
-                  >
-                  <span id="check-charts" class="hero-check" data-state="pending"
-                    ><span class="hero-check-mark" aria-hidden="true">○</span>Charts</span
-                  >
-                </span>
-              </li>
+              <li>Start analysis.</li>
             </ol>
           </div>
           <aside class="hero-status" aria-live="polite">
             <div id="status-pill" class="status-pill" data-state="idle">Idle</div>
             <p id="status-message" class="status-message">Enter required fields to enable analysis.</p>
+            <div class="hero-checks" aria-label="Data loading progress">
+              <span id="check-fetch" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>RBN data</span
+              >
+              <span id="check-cty" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>cty.dat</span
+              >
+              <span id="check-charts" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>Charts</span
+              >
+            </div>
           </aside>
         </div>
       </header>
@@ -52,7 +50,6 @@
       <section class="panel input-panel" aria-labelledby="analysis-setup-heading">
         <div class="panel-head">
           <h2 id="analysis-setup-heading">Setup</h2>
-          <p class="panel-note">Dates are global for all callsigns in this run.</p>
         </div>
 
         <form id="analysis-form" novalidate>
