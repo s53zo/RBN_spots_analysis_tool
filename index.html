@@ -328,6 +328,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script type="module" src="app.mjs"></script>
+    <script type="module">
+      import(`./app.mjs?v=${Date.now()}`);
+    </script>
   </body>
 </html>

@@ -223,12 +223,12 @@ function formatIsoToDisplay(iso) {
 }
 
 function collectInputModel() {
-  const dates = [parseDateInputToIso(ui.datePrimary.value), parseDateInputToIso(ui.dateSecondary.value)].filter(Boolean);
+  const dates = [parseDateInputToIso(ui.datePrimary?.value), parseDateInputToIso(ui.dateSecondary?.value)].filter(Boolean);
   const calls = [
-    normalizeCall(ui.callPrimary.value),
-    normalizeCall(ui.callCompare1.value),
-    normalizeCall(ui.callCompare2.value),
-    normalizeCall(ui.callCompare3.value),
+    normalizeCall(ui.callPrimary?.value),
+    normalizeCall(ui.callCompare1?.value),
+    normalizeCall(ui.callCompare2?.value),
+    normalizeCall(ui.callCompare3?.value),
   ];
 
   return {
@@ -262,12 +262,13 @@ function addUtcDay(isoDate, daysToAdd = 1) {
 }
 
 function suggestSecondaryDateFromPrimary() {
-  const primaryIso = parseDateInputToIso(ui.datePrimary.value);
+  const primaryIso = parseDateInputToIso(ui.datePrimary?.value);
   if (!primaryIso) return;
 
   const suggestedIso = addUtcDay(primaryIso, 1);
-  const secondaryIso = parseDateInputToIso(ui.dateSecondary.value);
+  const secondaryIso = parseDateInputToIso(ui.dateSecondary?.value);
   if (!secondaryIso) {
+    if (!ui.dateSecondary) return;
     ui.dateSecondary.value = formatIsoToDisplay(suggestedIso);
     if (state.datePickers.secondary && suggestedIso) {
       state.datePickers.secondary.setDate(suggestedIso, false, "Y-m-d");
@@ -278,6 +279,7 @@ function suggestSecondaryDateFromPrimary() {
 function initDatePickers() {
   const flatpickrFn = globalThis?.flatpickr;
   if (typeof flatpickrFn !== "function") return;
+  if (!ui.datePrimary || !ui.dateSecondary) return;
 
   const baseOptions = {
     dateFormat: "d-m-Y",
