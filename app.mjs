@@ -65,6 +65,24 @@ const ui = {
 
 let html2CanvasLoadPromise = null;
 
+function trackCallsignEntryEvents(model) {
+  const gtagFn = globalThis?.gtag;
+  if (typeof gtagFn !== "function" || !model) return;
+
+  const entries = [
+    { slot: "primary", callsign: model.primary },
+    ...model.comparisons.map((callsign, index) => ({ slot: `compare_${index + 1}`, callsign })),
+  ].filter((entry) => entry.callsign);
+
+  for (const entry of entries) {
+    gtagFn("event", "callsign_entry", {
+      callsign_slot: entry.slot,
+      callsign: entry.callsign,
+      value: 1,
+    });
+  }
+}
+
 function formatNumber(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return String(value || 0);
@@ -793,6 +811,7 @@ async function handleSubmit(event) {
     setStatus("error", validation.reason);
     return;
   }
+  trackCallsignEntryEvents(model);
 
   const runToken = state.activeRunToken + 1;
   state.activeRunToken = runToken;
