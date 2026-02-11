@@ -1,5 +1,6 @@
 import { runRbnAnalysis } from "./src/rbn-orchestrator.mjs";
 import { normalizeBandToken, normalizeCall } from "./src/rbn-normalize.mjs";
+import { validateAnalysisInput } from "./src/input-validation.mjs";
 import {
   CONTINENT_ORDER,
   continentLabel,
@@ -12,8 +13,6 @@ import {
   computeProportionalCaps,
 } from "./src/rbn-compare-index.mjs";
 import { bandColorForChart, drawRbnSignalCanvas, slotLineDash, slotMarkerShape } from "./src/rbn-canvas.mjs";
-
-const CALLSIGN_PATTERN = /^[A-Z0-9/-]{3,20}$/;
 
 const state = {
   status: "idle",
@@ -119,40 +118,7 @@ function collectInputModel() {
   };
 }
 
-function validateModel(model) {
-  if (!model.dates.length) {
-    return { ok: false, reason: "Pick at least one UTC date." };
-  }
-
-  if (model.dates.length > 2) {
-    return { ok: false, reason: "A maximum of two dates is allowed." };
-  }
-
-  if (new Set(model.dates).size !== model.dates.length) {
-    return { ok: false, reason: "Date 1 and Date 2 must be different." };
-  }
-
-  if (!model.primary) {
-    return { ok: false, reason: "Enter your primary callsign." };
-  }
-
-  if (!CALLSIGN_PATTERN.test(model.primary)) {
-    return { ok: false, reason: "Primary callsign format looks invalid." };
-  }
-
-  for (const compareCall of model.comparisons) {
-    if (!CALLSIGN_PATTERN.test(compareCall)) {
-      return { ok: false, reason: `Compare callsign ${compareCall} format looks invalid.` };
-    }
-  }
-
-  const allCalls = [model.primary, ...model.comparisons];
-  if (new Set(allCalls).size !== allCalls.length) {
-    return { ok: false, reason: "Callsigns must be unique within one analysis run." };
-  }
-
-  return { ok: true, reason: "Ready to start analysis." };
-}
+const validateModel = validateAnalysisInput;
 
 function setStatus(status, message) {
   state.status = status;
