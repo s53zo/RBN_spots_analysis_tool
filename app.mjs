@@ -372,7 +372,12 @@ function updateCardLegend(card, bands, activeFilter) {
     return;
   }
   const hasFilter = activeFilter.size > 0;
-  node.innerHTML = list
+  const allChip = `
+    <button type="button" class="rbn-legend-item rbn-legend-toggle${hasFilter ? "" : " is-active"}" data-band="__ALL__">
+      All
+    </button>
+  `;
+  const chips = list
     .map((band) => {
       const active = !hasFilter || activeFilter.has(band);
       return `
@@ -382,6 +387,7 @@ function updateCardLegend(card, bands, activeFilter) {
       `;
     })
     .join("");
+  node.innerHTML = allChip + chips;
 }
 
 function renderCallsignLegend(slots) {
@@ -494,7 +500,13 @@ function bindChartInteractions(slots) {
   for (const button of legendButtons) {
     button.addEventListener("click", (event) => {
       const target = event.currentTarget;
-      const band = normalizeBandToken(target?.dataset?.band || "");
+      const token = String(target?.dataset?.band || "");
+      if (token === "__ALL__") {
+        state.chart.selectedBands = [];
+        renderAnalysisCharts();
+        return;
+      }
+      const band = normalizeBandToken(token);
       if (!band) return;
       const current = getActiveBandFilterSet();
       if (!current.size) {

@@ -234,6 +234,11 @@ input[type="text"] {
   font-size: 0.9rem;
 }
 
+.setup-row input[type="date"] {
+  width: 75%;
+  min-width: 5.5rem;
+}
+
 input::placeholder {
   color: #a8b4c8;
   font-weight: 400;
