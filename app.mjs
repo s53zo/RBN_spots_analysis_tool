@@ -777,9 +777,7 @@ async function handleSubmit(event) {
     if (ui.checkCty?.dataset.state === "loading") {
       setLoadCheck(ui.checkCty, "error");
     }
-    if (ui.checkCharts?.dataset.state === "loading") {
-      setLoadCheck(ui.checkCharts, "error");
-    }
+    setLoadCheck(ui.checkCharts, "error");
     setStatus("error", error?.message || "Analysis run failed.");
   } finally {
     if (runToken === state.activeRunToken) {
