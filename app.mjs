@@ -883,8 +883,176 @@ function handleLegendBandClick(event) {
 }
 
 async function copyCardAsImage(card, button) {
-  const html2canvasFn = globalThis?.html2canvas;
-  if (typeof html2canvasFn !== "function") return;
+  const drawRoundedRect = (ctx, x, y, width, height, radius) => {
+    const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + width, y, x + width, y + height, r);
+    ctx.arcTo(x + width, y + height, x, y + height, r);
+    ctx.arcTo(x, y + height, x, y, r);
+    ctx.arcTo(x, y, x + width, y, r);
+    ctx.closePath();
+  };
+
+  const layoutChips = (ctx, chips, maxWidth, gap = 8, paddingX = 10) => {
+    const rows = [];
+    let row = [];
+    let rowWidth = 0;
+    for (const chip of chips) {
+      ctx.font = "600 13px Barlow, sans-serif";
+      const textWidth = ctx.measureText(chip.text).width;
+      const dotExtra = chip.dotColor ? 14 : 0;
+      const chipWidth = Math.ceil(textWidth + dotExtra + paddingX * 2);
+      const nextWidth = row.length ? rowWidth + gap + chipWidth : chipWidth;
+      if (row.length && nextWidth > maxWidth) {
+        rows.push(row);
+        row = [];
+        rowWidth = 0;
+      }
+      row.push({ ...chip, width: chipWidth });
+      rowWidth = row.length === 1 ? chipWidth : rowWidth + gap + chipWidth;
+    }
+    if (row.length) rows.push(row);
+    return rows;
+  };
+
+  const drawChipRows = (ctx, rows, x, yStart, gap = 8, lineGap = 8) => {
+    let y = yStart;
+    const chipH = 26;
+    for (const row of rows) {
+      let xCur = x;
+      for (const chip of row) {
+        ctx.fillStyle = chip.bg;
+        ctx.strokeStyle = chip.border;
+        drawRoundedRect(ctx, xCur, y, chip.width, chipH, 13);
+        ctx.fill();
+        ctx.stroke();
+        let tx = xCur + 10;
+        if (chip.dotColor) {
+          ctx.fillStyle = chip.dotColor;
+          ctx.beginPath();
+          ctx.arc(xCur + 10, y + chipH / 2, 4, 0, Math.PI * 2);
+          ctx.fill();
+          tx += 11;
+        }
+        ctx.fillStyle = chip.textColor;
+        ctx.font = "600 13px Barlow, sans-serif";
+        ctx.fillText(chip.text, tx, y + 17);
+        xCur += chip.width + gap;
+      }
+      y += chipH + lineGap;
+    }
+    return y;
+  };
+
+  const buildCardExportCanvas = (node) => {
+    const chartCanvas = node.querySelector(".rbn-signal-canvas");
+    if (!(chartCanvas instanceof HTMLCanvasElement) || !chartCanvas.width || !chartCanvas.height) return null;
+
+    const title = node.querySelector(".rbn-signal-head h4")?.textContent?.trim() || "RBN skimmer";
+    const skimmer = node.querySelector(".rbn-signal-select option:checked")?.textContent?.trim() || "";
+    const meta = node.querySelector(".rbn-signal-meta")?.textContent?.trim() || "";
+
+    const bandChips = Array.from(node.querySelectorAll(".rbn-legend-toggle[data-band]"))
+      .filter((el) => String(el.getAttribute("data-band")) !== "__ALL__")
+      .map((el) => ({
+        text: String(el.textContent || "").trim(),
+        dotColor: String(el.querySelector("i")?.style?.background || ""),
+        bg: el.classList.contains("is-active") ? "#dce9ff" : "#edf3ff",
+        border: el.classList.contains("is-active") ? "#b7cdf1" : "#cbd9ef",
+        textColor: el.classList.contains("is-active") ? "#123c70" : "#27466e",
+      }));
+
+    const callChips = Array.from(node.querySelectorAll(".rbn-call-item")).map((el) => ({
+      text: String(el.textContent || "").trim().replace(/\s+/g, " "),
+      dotColor: "",
+      bg: "#ffffff",
+      border: "#d8e3f4",
+      textColor: "#214b7e",
+    }));
+
+    const exportWidth = 1600;
+    const contentW = exportWidth - 56;
+    const chartW = contentW;
+    const chartH = Math.round((chartCanvas.height / chartCanvas.width) * chartW);
+    const leftColW = Math.floor((contentW - 20) / 2);
+    const rightColW = contentW - 20 - leftColW;
+
+    const tmp = document.createElement("canvas");
+    const tmpCtx = tmp.getContext("2d");
+    if (!tmpCtx) return null;
+    const bandRows = layoutChips(tmpCtx, bandChips, leftColW);
+    const callRows = layoutChips(tmpCtx, callChips, rightColW);
+    const rowCount = Math.max(bandRows.length || 1, callRows.length || 1);
+    const legendRowsHeight = rowCount * 26 + Math.max(0, rowCount - 1) * 8;
+    const legendSectionH = 22 + legendRowsHeight + 12;
+
+    const headerH = 68;
+    const totalH = 28 + headerH + chartH + 16 + legendSectionH + 28;
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = exportWidth;
+    exportCanvas.height = totalH;
+    const ctx = exportCanvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+    let y = 28;
+    ctx.fillStyle = "#173a67";
+    ctx.font = "700 26px Space Grotesk, Barlow, sans-serif";
+    ctx.fillText(title, 28, y + 22);
+    if (skimmer) {
+      ctx.fillStyle = "#35557d";
+      ctx.font = "600 16px Barlow, sans-serif";
+      ctx.fillText(`Skimmer: ${skimmer}`, 28, y + 48);
+    }
+    if (meta) {
+      ctx.fillStyle = "#5b6e88";
+      ctx.font = "500 14px Barlow, sans-serif";
+      ctx.fillText(meta, 28, y + 64);
+    }
+
+    y += headerH;
+    ctx.fillStyle = "#fcfeff";
+    ctx.strokeStyle = "#d6e0ee";
+    drawRoundedRect(ctx, 28, y, chartW, chartH, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.drawImage(chartCanvas, 34, y + 6, chartW - 12, chartH - 12);
+
+    y += chartH + 16;
+    ctx.fillStyle = "#f8fbff";
+    ctx.strokeStyle = "#d6e0ee";
+    drawRoundedRect(ctx, 28, y, contentW, legendSectionH, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#3a5576";
+    ctx.font = "700 13px Barlow, sans-serif";
+    ctx.fillText("BANDS (click to filter)", 40, y + 18);
+    ctx.fillText("CALLSIGNS", 40 + leftColW + 20, y + 18);
+
+    drawChipRows(ctx, bandRows, 40, y + 28);
+    drawChipRows(ctx, callRows, 40 + leftColW + 20, y + 28);
+
+    return exportCanvas;
+  };
+
+  const canvasToBlob = (canvas) =>
+    new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob || null), "image/png");
+    });
+
+  const downloadCanvasPng = (canvas, filename = "rbn-graph.png") => {
+    const dataUrl = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   button.disabled = true;
   const prevState = button.dataset.state || "";
@@ -892,16 +1060,12 @@ async function copyCardAsImage(card, button) {
   const prevText = button.textContent || "🖼";
 
   try {
-    const canvas = await html2canvasFn(card, {
-      backgroundColor: "#ffffff",
-      scale: Math.max(1, Math.min(2, Number(globalThis?.devicePixelRatio) || 1)),
-      useCORS: true,
-      logging: false,
-    });
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-    if (!blob) throw new Error("Could not render image.");
+    const canvas = buildCardExportCanvas(card);
+    if (!canvas) throw new Error("Could not build image.");
+    const blob = await canvasToBlob(canvas);
+    if (!blob) throw new Error("Could not encode image.");
 
-    if (navigator?.clipboard?.write && globalThis?.ClipboardItem) {
+    if (globalThis.isSecureContext && navigator?.clipboard?.write && globalThis?.ClipboardItem) {
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       button.dataset.state = "copied";
       button.title = "Copied";
@@ -914,14 +1078,7 @@ async function copyCardAsImage(card, button) {
       return;
     }
 
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "rbn-graph.png";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    downloadCanvasPng(canvas, "rbn-graph.png");
 
     button.dataset.state = "copied";
     button.title = "Downloaded (clipboard unavailable)";
