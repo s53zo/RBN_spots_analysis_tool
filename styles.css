@@ -561,9 +561,9 @@ button {
 }
 
 .rbn-signal-picker {
-  margin-left: auto;
-  min-width: min(100%, 12.2rem);
-  max-width: min(100%, 12.2rem);
+  margin-left: 0;
+  min-width: min(100%, 10.8rem);
+  max-width: min(100%, 10.8rem);
 }
 
 .rbn-signal-picker select {
