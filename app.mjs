@@ -496,24 +496,6 @@ function scheduleChartDraw(slots) {
 function bindChartInteractions(slots) {
   teardownChartObservers();
 
-  const legendButtons = Array.from(ui.chartsRoot.querySelectorAll(".rbn-legend-toggle"));
-  for (const button of legendButtons) {
-    button.addEventListener("click", (event) => {
-      const target = event.currentTarget;
-      const token = String(target?.dataset?.band || "");
-      if (token === "__ALL__") {
-        state.chart.selectedBands = [];
-        renderAnalysisCharts();
-        return;
-      }
-      const band = normalizeBandToken(token);
-      if (!band) return;
-      // Single-select behavior: clicking a band focuses that one band only.
-      state.chart.selectedBands = [band];
-      renderAnalysisCharts();
-    });
-  }
-
   const selects = Array.from(ui.chartsRoot.querySelectorAll(".rbn-signal-select"));
   for (const select of selects) {
     select.addEventListener("change", (event) => {
@@ -815,6 +797,24 @@ async function handleSubmit(event) {
   }
 }
 
+function handleLegendBandClick(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest(".rbn-legend-toggle");
+  if (!button || !ui.chartsRoot.contains(button)) return;
+  const token = String(button.dataset.band || "");
+  if (token === "__ALL__") {
+    state.chart.selectedBands = [];
+    renderAnalysisCharts();
+    return;
+  }
+  const band = normalizeBandToken(token);
+  if (!band) return;
+  // Single-select behavior: clicking a band focuses that one band only.
+  state.chart.selectedBands = [band];
+  renderAnalysisCharts();
+}
+
 function bindEvents() {
   const onDatePrimaryChange = () => {
     suggestSecondaryDateFromPrimary();
@@ -831,6 +831,7 @@ function bindEvents() {
   ui.form.addEventListener("input", handleInput);
   ui.form.addEventListener("submit", handleSubmit);
   ui.form.addEventListener("reset", handleReset);
+  ui.chartsRoot.addEventListener("click", handleLegendBandClick);
 }
 
 function preloadBackgroundData() {

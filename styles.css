@@ -197,16 +197,26 @@ p {
 }
 
 .setup-row {
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(7rem, 1fr);
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: flex-end;
+  gap: 0.45rem;
   overflow-x: auto;
   padding-bottom: 0.25rem;
 }
 
-.field {
+.setup-row .field {
   display: grid;
   gap: 0.35rem;
+  width: 7rem;
   min-width: 7rem;
+  flex: 0 0 auto;
+}
+
+.setup-row .field.field-date {
+  width: 5.25rem;
+  min-width: 5.25rem;
 }
 
 .field label {
@@ -214,7 +224,8 @@ p {
   font-weight: 600;
 }
 
-.field-actions {
+.setup-row .field-actions {
+  width: auto;
   min-width: 9.2rem;
 }
 
@@ -224,6 +235,7 @@ p {
 
 input[type="date"],
 input[type="text"] {
+  width: 100%;
   min-height: 1.95rem;
   border: 1px solid var(--border);
   border-radius: 0.46rem;
@@ -232,11 +244,6 @@ input[type="text"] {
   padding-inline: 0.56rem;
   font-family: inherit;
   font-size: 0.9rem;
-}
-
-.setup-row input[type="date"] {
-  width: 75%;
-  min-width: 5.5rem;
 }
 
 input::placeholder {
