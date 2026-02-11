@@ -16,6 +16,7 @@ import {
 import { bandColorForChart, drawRbnSignalCanvas, slotLineDash, slotMarkerShape } from "./src/rbn-canvas.mjs";
 
 const state = {
+  activeChapter: "historical",
   status: "idle",
   dates: [],
   slots: {
@@ -46,6 +47,10 @@ const state = {
 };
 
 const ui = {
+  chapterTabs: Array.from(document.querySelectorAll("[data-chapter-tab]")),
+  chapterHistorical: document.querySelector("#chapter-historical"),
+  chapterLive: document.querySelector("#chapter-live"),
+  chapterSkimmer: document.querySelector("#chapter-skimmer"),
   form: document.querySelector("#analysis-form"),
   datePrimary: document.querySelector("#date-primary"),
   dateSecondary: document.querySelector("#date-secondary"),
@@ -64,6 +69,21 @@ const ui = {
 };
 
 let html2CanvasLoadPromise = null;
+
+function setActiveChapter(chapter) {
+  const normalized = chapter === "live" || chapter === "skimmer" ? chapter : "historical";
+  state.activeChapter = normalized;
+
+  for (const tab of ui.chapterTabs) {
+    const isActive = tab.dataset.chapterTab === normalized;
+    tab.classList.toggle("is-active", isActive);
+    tab.setAttribute("aria-selected", isActive ? "true" : "false");
+  }
+
+  if (ui.chapterHistorical) ui.chapterHistorical.hidden = normalized !== "historical";
+  if (ui.chapterLive) ui.chapterLive.hidden = normalized !== "live";
+  if (ui.chapterSkimmer) ui.chapterSkimmer.hidden = normalized !== "skimmer";
+}
 
 function trackCallsignEntryEvents(model) {
   const gtagFn = globalThis?.gtag;
@@ -1254,6 +1274,14 @@ function handleCopyCardClick(event) {
   copyCardAsImage(card, button);
 }
 
+function handleChapterTabClick(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest("[data-chapter-tab]");
+  if (!(button instanceof HTMLButtonElement)) return;
+  setActiveChapter(button.dataset.chapterTab || "historical");
+}
+
 function bindEvents() {
   const onDatePrimaryChange = () => {
     suggestSecondaryDateFromPrimary();
@@ -1272,6 +1300,9 @@ function bindEvents() {
   ui.form.addEventListener("reset", handleReset);
   ui.chartsRoot.addEventListener("click", handleLegendBandClick);
   ui.chartsRoot.addEventListener("click", handleCopyCardClick);
+  for (const tab of ui.chapterTabs) {
+    tab.addEventListener("click", handleChapterTabClick);
+  }
 }
 
 function preloadBackgroundData() {
@@ -1283,6 +1314,7 @@ function preloadBackgroundData() {
 bindEvents();
 initDatePickers();
 preloadBackgroundData();
+setActiveChapter(state.activeChapter);
 resetLoadChecks();
 renderAnalysisCharts();
 refreshFormState();

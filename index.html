@@ -59,104 +59,256 @@
         </div>
       </header>
 
-      <section class="panel input-panel" aria-labelledby="analysis-setup-heading">
-        <div class="panel-head">
-          <h2 id="analysis-setup-heading">Setup</h2>
+      <section class="panel chapter-nav-panel" aria-label="Analysis chapters">
+        <div class="chapter-tabs" role="tablist" aria-label="Analysis chapters">
+          <button
+            id="tab-historical"
+            class="chapter-tab is-active"
+            role="tab"
+            type="button"
+            aria-controls="chapter-historical"
+            aria-selected="true"
+            data-chapter-tab="historical"
+          >
+            Historical analysis
+          </button>
+          <button
+            id="tab-live"
+            class="chapter-tab"
+            role="tab"
+            type="button"
+            aria-controls="chapter-live"
+            aria-selected="false"
+            data-chapter-tab="live"
+          >
+            Live analysis
+          </button>
+          <button
+            id="tab-skimmer"
+            class="chapter-tab"
+            role="tab"
+            type="button"
+            aria-controls="chapter-skimmer"
+            aria-selected="false"
+            data-chapter-tab="skimmer"
+          >
+            Skimmer comparison
+          </button>
         </div>
-
-        <form id="analysis-form" novalidate>
-          <div class="field-grid setup-row">
-            <div class="field field-date">
-              <label for="date-primary">Date 1 (UTC DD-MM-YYYY) <span class="req">*</span></label>
-              <input
-                id="date-primary"
-                name="datePrimary"
-                type="text"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="DD-MM-YYYY"
-                required
-              />
-            </div>
-            <div class="field field-date">
-              <label for="date-secondary">Date 2 (UTC DD-MM-YYYY)</label>
-              <input
-                id="date-secondary"
-                name="dateSecondary"
-                type="text"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="DD-MM-YYYY"
-              />
-            </div>
-            <div class="field">
-              <label for="call-primary">Primary callsign <span class="req">*</span></label>
-              <input
-                id="call-primary"
-                name="callPrimary"
-                type="text"
-                maxlength="20"
-                inputmode="text"
-                autocomplete="off"
-                placeholder="S53ZO"
-                required
-              />
-            </div>
-            <div class="field">
-              <label for="call-compare-1">Compare callsign 1</label>
-              <input
-                id="call-compare-1"
-                name="callCompare1"
-                type="text"
-                maxlength="20"
-                inputmode="text"
-                autocomplete="off"
-                placeholder="K1ABC"
-              />
-            </div>
-            <div class="field">
-              <label for="call-compare-2">Compare callsign 2</label>
-              <input
-                id="call-compare-2"
-                name="callCompare2"
-                type="text"
-                maxlength="20"
-                inputmode="text"
-                autocomplete="off"
-                placeholder="DL1XYZ"
-              />
-            </div>
-            <div class="field">
-              <label for="call-compare-3">Compare callsign 3</label>
-              <input
-                id="call-compare-3"
-                name="callCompare3"
-                type="text"
-                maxlength="20"
-                inputmode="text"
-                autocomplete="off"
-                placeholder="JA1AAA"
-              />
-            </div>
-            <div class="field field-actions">
-              <label for="start-analysis">Run</label>
-              <div class="actions-row">
-                <button id="start-analysis" class="btn-primary" type="submit" disabled>Start analysis</button>
-                <button id="reset-analysis" class="btn-ghost" type="reset">Reset</button>
-              </div>
-            </div>
-          </div>
-        </form>
       </section>
 
-      <section class="panel charts-panel" aria-labelledby="charts-heading">
-        <div class="panel-head">
-          <h2 id="charts-heading">Signal Charts</h2>
-          <p id="charts-note" class="panel-note">Charts appear after analysis starts.</p>
-        </div>
-        <div id="charts-root" class="charts-root empty-state">
-          <p>No analysis results yet.</p>
-        </div>
+      <section id="chapter-historical" class="chapter-pane chapter-pane-historical" role="tabpanel" aria-labelledby="tab-historical">
+        <section class="panel input-panel" aria-labelledby="analysis-setup-heading">
+          <div class="panel-head">
+            <h2 id="analysis-setup-heading">Setup</h2>
+          </div>
+
+          <form id="analysis-form" novalidate>
+            <div class="field-grid setup-row">
+              <div class="field field-date">
+                <label for="date-primary">Date 1 (UTC DD-MM-YYYY) <span class="req">*</span></label>
+                <input
+                  id="date-primary"
+                  name="datePrimary"
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  placeholder="DD-MM-YYYY"
+                  required
+                />
+              </div>
+              <div class="field field-date">
+                <label for="date-secondary">Date 2 (UTC DD-MM-YYYY)</label>
+                <input
+                  id="date-secondary"
+                  name="dateSecondary"
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  placeholder="DD-MM-YYYY"
+                />
+              </div>
+              <div class="field">
+                <label for="call-primary">Primary callsign <span class="req">*</span></label>
+                <input
+                  id="call-primary"
+                  name="callPrimary"
+                  type="text"
+                  maxlength="20"
+                  inputmode="text"
+                  autocomplete="off"
+                  placeholder="S53ZO"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="call-compare-1">Compare callsign 1</label>
+                <input
+                  id="call-compare-1"
+                  name="callCompare1"
+                  type="text"
+                  maxlength="20"
+                  inputmode="text"
+                  autocomplete="off"
+                  placeholder="K1ABC"
+                />
+              </div>
+              <div class="field">
+                <label for="call-compare-2">Compare callsign 2</label>
+                <input
+                  id="call-compare-2"
+                  name="callCompare2"
+                  type="text"
+                  maxlength="20"
+                  inputmode="text"
+                  autocomplete="off"
+                  placeholder="DL1XYZ"
+                />
+              </div>
+              <div class="field">
+                <label for="call-compare-3">Compare callsign 3</label>
+                <input
+                  id="call-compare-3"
+                  name="callCompare3"
+                  type="text"
+                  maxlength="20"
+                  inputmode="text"
+                  autocomplete="off"
+                  placeholder="JA1AAA"
+                />
+              </div>
+              <div class="field field-actions">
+                <label for="start-analysis">Run</label>
+                <div class="actions-row">
+                  <button id="start-analysis" class="btn-primary" type="submit" disabled>Start analysis</button>
+                  <button id="reset-analysis" class="btn-ghost" type="reset">Reset</button>
+                </div>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel charts-panel" aria-labelledby="charts-heading">
+          <div class="panel-head">
+            <h2 id="charts-heading">Signal Charts</h2>
+            <p id="charts-note" class="panel-note">Charts appear after analysis starts.</p>
+          </div>
+          <div id="charts-root" class="charts-root empty-state">
+            <p>No analysis results yet.</p>
+          </div>
+        </section>
+      </section>
+
+      <section
+        id="chapter-live"
+        class="chapter-pane chapter-pane-live"
+        role="tabpanel"
+        aria-labelledby="tab-live"
+        hidden
+      >
+        <section class="panel input-panel" aria-labelledby="live-setup-heading">
+          <div class="panel-head">
+            <h2 id="live-setup-heading">Live Setup</h2>
+            <p class="panel-note">Rolling window, refreshed every 5 minutes while this tab is active.</p>
+          </div>
+          <form id="live-analysis-form" novalidate>
+            <div class="field-grid setup-row">
+              <div class="field">
+                <label for="live-window">Window (UTC)</label>
+                <select id="live-window" name="liveWindow" class="live-window-select">
+                  <option value="1">Last 1h</option>
+                  <option value="6">Last 6h</option>
+                  <option value="12">Last 12h</option>
+                  <option value="24" selected>Last 24h</option>
+                  <option value="48">Last 48h</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="live-call-primary">Primary callsign <span class="req">*</span></label>
+                <input
+                  id="live-call-primary"
+                  name="liveCallPrimary"
+                  type="text"
+                  maxlength="20"
+                  inputmode="text"
+                  autocomplete="off"
+                  placeholder="S53ZO"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="live-call-compare-1">Compare callsign 1</label>
+                <input
+                  id="live-call-compare-1"
+                  name="liveCallCompare1"
+                  type="text"
+                  maxlength="20"
+                  inputmode="text"
+                  autocomplete="off"
+                  placeholder="K1ABC"
+                />
+              </div>
+              <div class="field">
+                <label for="live-call-compare-2">Compare callsign 2</label>
+                <input
+                  id="live-call-compare-2"
+                  name="liveCallCompare2"
+                  type="text"
+                  maxlength="20"
+                  inputmode="text"
+                  autocomplete="off"
+                  placeholder="DL1XYZ"
+                />
+              </div>
+              <div class="field">
+                <label for="live-call-compare-3">Compare callsign 3</label>
+                <input
+                  id="live-call-compare-3"
+                  name="liveCallCompare3"
+                  type="text"
+                  maxlength="20"
+                  inputmode="text"
+                  autocomplete="off"
+                  placeholder="JA1AAA"
+                />
+              </div>
+              <div class="field field-actions">
+                <label for="start-live-analysis">Run</label>
+                <div class="actions-row">
+                  <button id="start-live-analysis" class="btn-primary" type="submit" disabled>Start live analysis</button>
+                  <button id="reset-live-analysis" class="btn-ghost" type="reset">Reset</button>
+                </div>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel charts-panel" aria-labelledby="live-charts-heading">
+          <div class="panel-head">
+            <h2 id="live-charts-heading">Live Signal Charts</h2>
+            <p id="live-charts-note" class="panel-note">Live charts appear after analysis starts.</p>
+          </div>
+          <div id="live-charts-root" class="charts-root empty-state">
+            <p>No live analysis results yet.</p>
+          </div>
+        </section>
+      </section>
+
+      <section
+        id="chapter-skimmer"
+        class="chapter-pane chapter-pane-skimmer"
+        role="tabpanel"
+        aria-labelledby="tab-skimmer"
+        hidden
+      >
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Skimmer Comparison</h2>
+          </div>
+          <div class="chapter-placeholder">
+            <p>This chapter is coming soon.</p>
+          </div>
+        </section>
       </section>
     </main>
 
