@@ -487,6 +487,8 @@ button {
   }
 
   .hero,
+  .chapter-nav-panel,
+  .chapter-pane,
   .input-panel,
   .charts-panel {
     grid-column: span 12;
