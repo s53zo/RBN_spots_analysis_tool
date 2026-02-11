@@ -215,8 +215,8 @@ p {
 }
 
 .setup-row .field.field-date {
-  width: 8rem;
-  min-width: 8rem;
+  width: 9.8rem;
+  min-width: 9.8rem;
 }
 
 .field label {
@@ -233,7 +233,6 @@ p {
   color: var(--error);
 }
 
-input[type="date"],
 input[type="text"] {
   width: 100%;
   min-height: 1.95rem;
@@ -244,24 +243,6 @@ input[type="text"] {
   padding-inline: 0.56rem;
   font-family: inherit;
   font-size: 0.9rem;
-}
-
-.date-control {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.date-control input {
-  flex: 1 1 auto;
-}
-
-.date-picker-btn {
-  min-width: 3.25rem;
-  min-height: 1.95rem;
-  padding: 0.24rem 0.52rem;
-  border-radius: 0.46rem;
-  font-size: 0.82rem;
 }
 
 input::placeholder {

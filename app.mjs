@@ -49,8 +49,6 @@ const ui = {
   form: document.querySelector("#analysis-form"),
   datePrimary: document.querySelector("#date-primary"),
   dateSecondary: document.querySelector("#date-secondary"),
-  datePrimaryPicker: document.querySelector("#date-primary-picker"),
-  dateSecondaryPicker: document.querySelector("#date-secondary-picker"),
   callPrimary: document.querySelector("#call-primary"),
   callCompare1: document.querySelector("#call-compare-1"),
   callCompare2: document.querySelector("#call-compare-2"),
@@ -163,21 +161,11 @@ function addUtcDay(isoDate, daysToAdd = 1) {
 
 function suggestSecondaryDateFromPrimary() {
   const primaryIso = parseDateInputToIso(ui.datePrimary.value);
-  if (!primaryIso) {
-    if (state.datePickers.secondary) {
-      state.datePickers.secondary.set("minDate", null);
-    }
-    return;
-  }
+  if (!primaryIso) return;
 
   const suggestedIso = addUtcDay(primaryIso, 1);
-  const minIso = suggestedIso || primaryIso;
-  if (state.datePickers.secondary) {
-    state.datePickers.secondary.set("minDate", minIso);
-  }
-
   const secondaryIso = parseDateInputToIso(ui.dateSecondary.value);
-  if (!secondaryIso || secondaryIso <= primaryIso) {
+  if (!secondaryIso) {
     ui.dateSecondary.value = formatIsoToDisplay(suggestedIso);
     if (state.datePickers.secondary && suggestedIso) {
       state.datePickers.secondary.setDate(suggestedIso, false, "Y-m-d");
@@ -211,16 +199,6 @@ function initDatePickers() {
     onChange: () => refreshFormState(),
     onClose: () => refreshFormState(),
   });
-
-  if (ui.datePrimaryPicker) {
-    ui.datePrimaryPicker.addEventListener("click", () => state.datePickers.primary?.open());
-  }
-  if (ui.dateSecondaryPicker) {
-    ui.dateSecondaryPicker.addEventListener("click", () => {
-      suggestSecondaryDateFromPrimary();
-      state.datePickers.secondary?.open();
-    });
-  }
 }
 
 const validateModel = validateAnalysisInput;
@@ -729,7 +707,7 @@ function renderAnalysisCharts() {
             </div>
             <div class="rbn-signal-side">
               <div class="rbn-signal-legend">
-                <h5>Bands</h5>
+                <h5>Bands (click to filter)</h5>
                 <span class="rbn-signal-legend-bands"></span>
               </div>
               <div class="rbn-signal-calls">
