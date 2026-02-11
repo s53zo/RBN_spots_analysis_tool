@@ -224,6 +224,12 @@ p {
   font-weight: 600;
 }
 
+.setup-row .field label {
+  font-size: 0.63rem;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
 .setup-row .field-actions {
   width: auto;
   min-width: 9.2rem;
@@ -604,8 +610,10 @@ button {
 }
 
 .rbn-signal-legend {
-  display: grid;
-  gap: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
 }
 
 .rbn-signal-side {
@@ -613,11 +621,11 @@ button {
   border-radius: 0.65rem;
   background: #f8fbff;
   padding: 0.5rem;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.55rem;
-  align-content: start;
-  align-items: start;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  overflow-x: auto;
 }
 
 .rbn-signal-legend h5,
@@ -631,8 +639,10 @@ button {
 
 .rbn-signal-legend-bands {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.3rem;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .rbn-legend-item {
@@ -675,14 +685,17 @@ button {
 }
 
 .rbn-signal-calls-list {
-  display: grid;
+  display: flex;
+  flex-wrap: nowrap;
   gap: 0.28rem;
-  justify-items: end;
+  justify-content: flex-end;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .rbn-call-item {
-  display: grid;
-  grid-template-columns: auto auto auto;
+  display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.35rem;
   font-size: 0.78rem;
@@ -693,12 +706,16 @@ button {
 }
 
 .rbn-signal-legend {
-  justify-items: start;
+  justify-content: flex-start;
 }
 
 .rbn-signal-calls {
-  justify-self: end;
-  text-align: right;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+  text-align: left;
+  min-width: 0;
 }
 
 .rbn-call-name {
@@ -718,15 +735,6 @@ button {
 
 @media (max-width: 52rem) {
   .rbn-signal-side {
-    grid-template-columns: 1fr;
-  }
-
-  .rbn-signal-calls {
-    justify-self: start;
-    text-align: left;
-  }
-
-  .rbn-signal-calls-list {
-    justify-items: start;
+    gap: 0.55rem;
   }
 }
