@@ -33,7 +33,8 @@ function formatUtcTick(ts) {
   const date = new Date(ts);
   const day = String(date.getUTCDate()).padStart(2, "0");
   const hour = String(date.getUTCHours()).padStart(2, "0");
-  return `${day} ${hour}Z`;
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${day} ${hour}:${minute}Z`;
 }
 
 function drawMarkerPath(ctx, x, y, shape, size) {
@@ -138,7 +139,7 @@ function drawRbnSignalCanvas(canvas, model) {
   }
 
   context.textBaseline = "top";
-  const xTicks = Math.max(2, Math.min(10, Math.floor(plotWidth / 120)));
+  const xTicks = Math.max(2, Math.min(10, Math.floor(plotWidth / 150)));
   for (let index = 0; index <= xTicks; index += 1) {
     const t = index / xTicks;
     const ts = minTs + t * (maxTs - minTs);
