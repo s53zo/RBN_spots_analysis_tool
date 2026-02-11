@@ -146,6 +146,11 @@ function setStatus(status, message) {
   ui.statusMessage.textContent = message;
 }
 
+function setStartButtonMode(mode) {
+  if (!ui.startButton) return;
+  ui.startButton.dataset.state = mode || "idle";
+}
+
 function setLoadCheck(node, status) {
   if (!node) return;
   node.dataset.state = status;
@@ -684,10 +689,12 @@ function refreshFormState(options = {}) {
 
   if (state.status === "running") {
     ui.startButton.disabled = true;
+    setStartButtonMode("running");
     return { model, validation };
   }
 
   ui.startButton.disabled = !validation.ok;
+  setStartButtonMode(validation.ok ? "ready" : "idle");
   const retryActive = state.retry.untilTs > Date.now();
   if (!silentStatus && !retryActive) {
     if (validation.ok) {
@@ -737,6 +744,7 @@ async function handleSubmit(event) {
   setLoadCheck(ui.checkFetch, "loading");
   setStatus("running", "Fetching RBN data for selected callsigns...");
   ui.startButton.disabled = true;
+  setStartButtonMode("running");
 
   try {
     const result = await runRbnAnalysis(model);
@@ -803,11 +811,18 @@ async function handleSubmit(event) {
 }
 
 function bindEvents() {
-  ui.datePrimary.addEventListener("change", () => {
+  const onDatePrimaryChange = () => {
     suggestSecondaryDateFromPrimary();
     refreshFormState();
-  });
+  };
+  ui.datePrimary.addEventListener("change", onDatePrimaryChange);
+  ui.datePrimary.addEventListener("input", onDatePrimaryChange);
   ui.dateSecondary.addEventListener("focus", suggestSecondaryDateFromPrimary);
+  ui.dateSecondary.addEventListener("change", refreshFormState);
+  ui.callPrimary.addEventListener("change", refreshFormState);
+  ui.callCompare1.addEventListener("change", refreshFormState);
+  ui.callCompare2.addEventListener("change", refreshFormState);
+  ui.callCompare3.addEventListener("change", refreshFormState);
   ui.form.addEventListener("input", handleInput);
   ui.form.addEventListener("submit", handleSubmit);
   ui.form.addEventListener("reset", handleReset);

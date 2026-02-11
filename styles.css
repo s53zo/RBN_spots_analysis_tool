@@ -115,6 +115,15 @@ p {
   margin-left: 0.45rem;
 }
 
+.hero-step-run {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.hero-step-run .hero-checks {
+  margin-left: 0;
+}
+
 .hero-check {
   display: inline-flex;
   align-items: center;
@@ -269,6 +278,18 @@ button {
 .btn-primary {
   background: var(--accent);
   color: #fff;
+}
+
+.btn-primary[data-state="ready"] {
+  background: var(--ok);
+}
+
+.btn-primary[data-state="ready"]:hover:not(:disabled) {
+  background: #0a6840;
+}
+
+.btn-primary[data-state="running"] {
+  background: #8c640f;
 }
 
 .btn-primary:hover:not(:disabled) {
