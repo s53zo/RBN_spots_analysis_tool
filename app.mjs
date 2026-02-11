@@ -33,7 +33,7 @@ const state = {
     baseMessage: "",
   },
   chart: {
-    selectedBand: "",
+    selectedBands: [],
     selectedByContinent: {},
     drawRaf: 0,
     resizeObserver: null,
@@ -55,6 +55,7 @@ const ui = {
   checkFetch: document.querySelector("#check-fetch"),
   checkCty: document.querySelector("#check-cty"),
   checkCharts: document.querySelector("#check-charts"),
+  chartsNote: document.querySelector("#charts-note"),
   chartsRoot: document.querySelector("#charts-root"),
 };
 
@@ -258,7 +259,11 @@ function getGlobalTimeRange(slots) {
   return { minTs, maxTs };
 }
 
-function computeSeriesForSpotter(slots, spotter, bandKey) {
+function getActiveBandFilterSet() {
+  return new Set((state.chart.selectedBands || []).map((band) => normalizeBandToken(band)).filter(Boolean));
+}
+
+function computeSeriesForSpotter(slots, spotter, bandFilterSet) {
   const series = [];
   const bandsPlotted = new Set();
   let minSnr = null;
@@ -274,24 +279,11 @@ function computeSeriesForSpotter(slots, spotter, bandKey) {
     const shape = slotMarkerShape(slot.id);
     const perSlotCap = 6500;
 
-    if (bandKey) {
-      const raw = entry.byBand.get(bandKey) || [];
-      const sampled = sampleFlatStrideSeeded(raw, perSlotCap, `${spotter}|${slot.id}|${index.dataKey}|${bandKey}`);
-      if (!sampled.length) continue;
-      series.push({ band: bandKey, slotId: slot.id, shape, color: bandColorForChart(bandKey), data: sampled });
-      pointTotal += Math.floor(sampled.length / 2);
-      bandsPlotted.add(bandKey);
-      for (let i = 1; i < sampled.length; i += 2) {
-        const snr = sampled[i];
-        if (!Number.isFinite(snr)) continue;
-        minSnr = minSnr == null ? snr : Math.min(minSnr, snr);
-        maxSnr = maxSnr == null ? snr : Math.max(maxSnr, snr);
-      }
-      continue;
-    }
-
-    const counts = Array.from(entry.bandCounts.entries()).filter(([, count]) => count > 0);
-    const total = entry.totalCount || counts.reduce((acc, [, count]) => acc + count, 0);
+    const counts = Array.from(entry.bandCounts.entries()).filter(
+      ([band, count]) => count > 0 && (!bandFilterSet.size || bandFilterSet.has(band)),
+    );
+    if (!counts.length) continue;
+    const total = counts.reduce((acc, [, count]) => acc + count, 0);
     const caps = computeProportionalCaps(counts, total, perSlotCap, 120);
 
     for (const [band, cap] of caps) {
@@ -366,12 +358,38 @@ function buildTrendlines(series, minTs, maxTs) {
     .filter(Boolean);
 }
 
-function updateCardLegend(card, bands) {
+function updateCardLegend(card, bands, activeFilter) {
   const node = card.querySelector(".rbn-signal-legend-bands");
   if (!node) return;
   const list = sortBands(Array.from(bands).filter(Boolean));
+  if (!list.length) {
+    node.innerHTML = `<span class="rbn-legend-empty">No bands</span>`;
+    return;
+  }
+  const hasFilter = activeFilter.size > 0;
   node.innerHTML = list
-    .map((band) => `<span class="rbn-legend-item"><i style="background:${bandColorForChart(band)}"></i>${formatBandLabel(band)}</span>`)
+    .map((band) => {
+      const active = !hasFilter || activeFilter.has(band);
+      return `
+        <button type="button" class="rbn-legend-item rbn-legend-toggle${active ? " is-active" : ""}" data-band="${band}">
+          <i style="background:${bandColorForChart(band)}"></i>${formatBandLabel(band)}
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function renderCallsignLegend(slots) {
+  return slots
+    .map(
+      (slot) => `
+        <div class="rbn-call-item">
+          <span class="rbn-call-name">${escapeHtml(slot.call)}</span>
+          <span class="rbn-call-marker">${slotMarkerSymbol(slot.id)}</span>
+          <span class="rbn-call-line">${slotLineSample(slot.id)}</span>
+        </div>
+      `,
+    )
     .join("");
 }
 
@@ -393,7 +411,8 @@ function drawCharts(slots) {
   if (!canvases.length) return;
 
   const { minTs, maxTs } = getGlobalTimeRange(slots);
-  const bandKey = normalizeBandToken(state.chart.selectedBand || "");
+  const availableBands = getAvailableBands(slots);
+  const bandFilterSet = getActiveBandFilterSet();
 
   for (const canvas of canvases) {
     const card = canvas.closest(".rbn-signal-card");
@@ -411,13 +430,13 @@ function drawCharts(slots) {
         trendlines: [],
       });
       if (card) {
-        updateCardLegend(card, []);
+        updateCardLegend(card, availableBands, bandFilterSet);
         updateCardMeta(card, 0, null, null);
       }
       continue;
     }
 
-    const model = computeSeriesForSpotter(slots, spotter, bandKey);
+    const model = computeSeriesForSpotter(slots, spotter, bandFilterSet);
     let minY = Number(model.minSnr);
     let maxY = Number(model.maxSnr);
     if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
@@ -433,8 +452,7 @@ function drawCharts(slots) {
     }
 
     const trendlines = buildTrendlines(model.series, minTs, maxTs);
-    const titleBand = bandKey ? formatBandLabel(bandKey) : "All bands";
-    const title = `${continentLabel(continent)} · ${spotter} · ${titleBand}`;
+    const title = `${continentLabel(continent)} · ${spotter}`;
 
     drawRbnSignalCanvas(canvas, {
       title,
@@ -447,7 +465,7 @@ function drawCharts(slots) {
     });
 
     if (card) {
-      updateCardLegend(card, model.bandsPlotted);
+      updateCardLegend(card, availableBands, bandFilterSet);
       updateCardMeta(card, model.pointTotal, model.minSnr, model.maxSnr);
     }
 
@@ -467,10 +485,21 @@ function scheduleChartDraw(slots) {
 function bindChartInteractions(slots) {
   teardownChartObservers();
 
-  const bandSelect = ui.chartsRoot.querySelector("#chart-band-filter");
-  if (bandSelect) {
-    bandSelect.addEventListener("change", (event) => {
-      state.chart.selectedBand = String(event.currentTarget.value || "");
+  const legendButtons = Array.from(ui.chartsRoot.querySelectorAll(".rbn-legend-toggle"));
+  for (const button of legendButtons) {
+    button.addEventListener("click", (event) => {
+      const target = event.currentTarget;
+      const band = normalizeBandToken(target?.dataset?.band || "");
+      if (!band) return;
+      const current = getActiveBandFilterSet();
+      if (!current.size) {
+        current.add(band);
+      } else if (current.has(band)) {
+        current.delete(band);
+      } else {
+        current.add(band);
+      }
+      state.chart.selectedBands = sortBands(Array.from(current));
       renderAnalysisCharts();
     });
   }
@@ -543,21 +572,9 @@ function renderChartFailures() {
   `;
 }
 
-function renderSlotLegend(slots) {
-  return slots
-    .map(
-      (slot) => `
-        <span class="slot-chip">
-          <span class="slot-chip-call">${escapeHtml(slot.call)}</span>
-          <span class="slot-chip-marker">${slotMarkerSymbol(slot.id)}</span>
-          <span class="slot-chip-line">${slotLineSample(slot.id)}</span>
-        </span>
-      `,
-    )
-    .join("");
-}
-
 function renderAnalysisCharts() {
+  if (ui.chartsNote) ui.chartsNote.hidden = Boolean(state.analysis);
+
   if (!state.analysis) {
     ui.chartsRoot.classList.add("empty-state");
     ui.chartsRoot.innerHTML = "<p>No analysis results yet.</p>";
@@ -579,11 +596,11 @@ function renderAnalysisCharts() {
   }
 
   const baseSlot = slots.find((slot) => slot.id === "A") || slots[0];
-  const bandOptions = getAvailableBands(slots);
-  const selectedBand = normalizeBandToken(state.chart.selectedBand || "");
-  state.chart.selectedBand = selectedBand;
-
-  const ranking = getOrBuildRanking(baseSlot, selectedBand);
+  const activeBands = getActiveBandFilterSet();
+  state.chart.selectedBands = sortBands(Array.from(activeBands));
+  const rankingBand = activeBands.size === 1 ? Array.from(activeBands)[0] : "";
+  const ranking = getOrBuildRanking(baseSlot, rankingBand);
+  const callsignLegend = renderCallsignLegend(slots);
   const cardsOrder = CONTINENT_ORDER.map((continent) => {
     const list = ranking?.byContinent.get(continent) || [];
     return {
@@ -631,8 +648,17 @@ function renderAnalysisCharts() {
               <canvas class="rbn-signal-canvas" data-continent="${continent}" data-spotter="${escapeHtml(selectedSpotter)}" data-height="280"></canvas>
               <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
             </div>
-            <div class="rbn-signal-legend">
-              <span class="rbn-signal-legend-bands"></span>
+            <div class="rbn-signal-side">
+              <div class="rbn-signal-legend">
+                <h5>Bands</h5>
+                <span class="rbn-signal-legend-bands"></span>
+              </div>
+              <div class="rbn-signal-calls">
+                <h5>Callsigns</h5>
+                <div class="rbn-signal-calls-list">
+                  ${callsignLegend}
+                </div>
+              </div>
             </div>
           </div>
         </article>
@@ -642,19 +668,6 @@ function renderAnalysisCharts() {
 
   ui.chartsRoot.classList.remove("empty-state");
   ui.chartsRoot.innerHTML = `
-    <div class="chart-controls">
-      <label for="chart-band-filter">Band filter</label>
-      <select id="chart-band-filter">
-        <option value="" ${selectedBand ? "" : "selected"}>All bands</option>
-        ${bandOptions
-          .map(
-            (band) => `<option value="${band}" ${band === selectedBand ? "selected" : ""}>${formatBandLabel(band)}</option>`,
-          )
-          .join("")}
-      </select>
-      <span class="chart-controls-note">Primary ranking source: ${escapeHtml(baseSlot.call)}</span>
-    </div>
-    <div class="slot-legend">${renderSlotLegend(slots)}</div>
     ${renderChartFailures()}
     <div class="rbn-signal-grid">${cardsHtml}</div>
   `;
@@ -698,7 +711,7 @@ function handleReset() {
   queueMicrotask(() => {
     clearRetryCountdown();
     state.analysis = null;
-    state.chart.selectedBand = "";
+    state.chart.selectedBands = [];
     state.chart.selectedByContinent = {};
     teardownChartObservers();
     suggestSecondaryDateFromPrimary();

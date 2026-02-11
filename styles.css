@@ -474,70 +474,6 @@ button {
   }
 }
 
-.chart-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.55rem;
-  border: 1px solid var(--border);
-  border-radius: 0.7rem;
-  background: #f8fbff;
-  margin-bottom: 0.7rem;
-}
-
-.chart-controls label {
-  font-weight: 600;
-  font-size: 0.92rem;
-}
-
-.chart-controls select {
-  min-height: 2.3rem;
-  border: 1px solid var(--border);
-  border-radius: 0.55rem;
-  background: #fff;
-  color: var(--text);
-  padding-inline: 0.65rem;
-  font: inherit;
-}
-
-.chart-controls-note {
-  font-size: 0.88rem;
-  color: var(--text-muted);
-}
-
-.slot-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-bottom: 0.7rem;
-}
-
-.slot-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  border: 1px solid var(--border);
-  background: #f6f9ff;
-  border-radius: 999px;
-  padding: 0.26rem 0.54rem;
-  font-size: 0.83rem;
-}
-
-.slot-chip-call {
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 600;
-}
-
-.slot-chip-marker {
-  color: #1b497e;
-}
-
-.slot-chip-line {
-  color: #44678f;
-  letter-spacing: 0.06em;
-}
-
 .chart-failures {
   border: 1px solid #efc1ba;
   background: #fdf0ee;
@@ -617,6 +553,7 @@ button {
   padding: 0.7rem;
   display: grid;
   gap: 0.55rem;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .rbn-signal-plot {
@@ -639,9 +576,27 @@ button {
 }
 
 .rbn-signal-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.rbn-signal-side {
+  border: 1px solid #d6e0ee;
+  border-radius: 0.65rem;
+  background: #f8fbff;
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+}
+
+.rbn-signal-legend h5,
+.rbn-signal-calls h5 {
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #3a5576;
 }
 
 .rbn-signal-legend-bands {
@@ -654,12 +609,17 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  min-width: 0;
+  min-height: 0;
   padding: 0.12rem 0.38rem;
   border-radius: 999px;
   font-size: 0.78rem;
   background: #edf3ff;
   border: 1px solid #cbd9ef;
   color: #27466e;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
 }
 
 .rbn-legend-item i {
@@ -667,4 +627,58 @@ button {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
+}
+
+.rbn-legend-item.is-active {
+  background: #dce9ff;
+  border-color: #b7cdf1;
+  color: #123c70;
+}
+
+.rbn-legend-item:not(.is-active) {
+  opacity: 0.5;
+}
+
+.rbn-legend-empty {
+  font-size: 0.8rem;
+  color: #617a99;
+}
+
+.rbn-signal-calls-list {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.rbn-call-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  border: 1px solid #d8e3f4;
+  border-radius: 0.55rem;
+  background: #fff;
+  padding: 0.2rem 0.38rem;
+}
+
+.rbn-call-name {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+}
+
+.rbn-call-marker {
+  color: #214b7e;
+}
+
+.rbn-call-line {
+  font-family: "Courier New", monospace;
+  color: #365b88;
+  letter-spacing: 0.05em;
+}
+
+@media (min-width: 64rem) {
+  .rbn-signal-body {
+    grid-template-columns: minmax(0, 1fr) 14.6rem;
+    align-items: start;
+  }
 }
