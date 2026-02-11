@@ -1,7 +1,7 @@
 import { runRbnAnalysis } from "./src/rbn-orchestrator.mjs";
 import { normalizeBandToken, normalizeCall } from "./src/rbn-normalize.mjs";
 import { validateAnalysisInput } from "./src/input-validation.mjs";
-import { getCtyState, preloadCtyData } from "./src/cty-lookup.mjs";
+import { preloadCtyData } from "./src/cty-lookup.mjs";
 import {
   CONTINENT_ORDER,
   continentLabel,
@@ -52,17 +52,10 @@ const ui = {
   startButton: document.querySelector("#start-analysis"),
   statusPill: document.querySelector("#status-pill"),
   statusMessage: document.querySelector("#status-message"),
-  summaryDetails: document.querySelector("#run-summary-details"),
-  summary: document.querySelector("#run-summary"),
-  summaryExtra: document.querySelector("#run-summary-extra"),
+  checkFetch: document.querySelector("#check-fetch"),
+  checkCty: document.querySelector("#check-cty"),
+  checkCharts: document.querySelector("#check-charts"),
   chartsRoot: document.querySelector("#charts-root"),
-};
-
-const summaryCells = {
-  dates: ui.summary.querySelector("div:nth-child(1) dd"),
-  primary: ui.summary.querySelector("div:nth-child(2) dd"),
-  comparisons: ui.summary.querySelector("div:nth-child(3) dd"),
-  status: ui.summary.querySelector("div:nth-child(4) dd"),
 };
 
 function formatNumber(value) {
@@ -150,17 +143,28 @@ function setStatus(status, message) {
   ui.statusPill.textContent =
     status === "ready" ? "Ready" : status === "running" ? "Running" : status === "error" ? "Error" : "Idle";
   ui.statusMessage.textContent = message;
-  summaryCells.status.textContent = ui.statusPill.textContent;
 }
 
-function writeSummary(model) {
-  summaryCells.dates.textContent = model.dates.length ? model.dates.join(" and ") : "-";
-  summaryCells.primary.textContent = model.primary || "-";
-  summaryCells.comparisons.textContent = model.comparisons.length ? model.comparisons.join(", ") : "None";
+function setLoadCheck(node, status) {
+  if (!node) return;
+  node.dataset.state = status;
+  const mark = node.querySelector(".hero-check-mark");
+  if (!mark) return;
+  if (status === "ok") {
+    mark.textContent = "✓";
+  } else if (status === "loading") {
+    mark.textContent = "…";
+  } else if (status === "error") {
+    mark.textContent = "×";
+  } else {
+    mark.textContent = "○";
+  }
 }
 
-function setSummaryExtra(html) {
-  ui.summaryExtra.innerHTML = html;
+function resetLoadChecks() {
+  setLoadCheck(ui.checkFetch, "pending");
+  setLoadCheck(ui.checkCty, "pending");
+  setLoadCheck(ui.checkCharts, "pending");
 }
 
 function clearRetryCountdown() {
@@ -192,50 +196,6 @@ function startRetryCountdown(ms, baseMessage, status = "ready") {
 
   tick();
   state.retry.timer = setInterval(tick, 1000);
-}
-
-function renderSummaryFromAnalysis() {
-  if (!state.analysis) {
-    setSummaryExtra("<p>No run metadata yet.</p>");
-    return;
-  }
-
-  const durationSec = Math.max(0, Math.round((state.analysis.durationMs || 0) / 1000));
-  const cty = getCtyState();
-  const ctyText = cty.loaded
-    ? `cty.dat loaded (${cty.source || "unknown source"})`
-    : cty.status === "loading"
-      ? "cty.dat loading..."
-      : `cty.dat unavailable${cty.error ? ` (${escapeHtml(cty.error)})` : ""}`;
-  const slotLines = state.analysis.slots
-    .map((slot) => {
-      if (slot.status === "ready") {
-        return `${slotTitle(slot)} ${escapeHtml(slot.call)}: ${formatNumber(slot.totalOfUs)} of-us, ${formatNumber(slot.totalByUs)} by-us`;
-      }
-      if (slot.status === "qrx") {
-        return `${slotTitle(slot)} ${escapeHtml(slot.call)}: rate limited`;
-      }
-      return `${slotTitle(slot)} ${escapeHtml(slot.call)}: ${escapeHtml(slot.error || "error")}`;
-    })
-    .map((line) => `<p>${line}</p>`)
-    .join("");
-
-  const skimmerPairs = Object.entries(state.chart.selectedByContinent || {}).filter(([, value]) => Boolean(value));
-  const skimmers = skimmerPairs.length
-    ? skimmerPairs
-        .map(([continent, value]) => `${continentLabel(continent)}: ${escapeHtml(value)}`)
-        .map((line) => `<p>${line}</p>`)
-        .join("")
-    : "<p>No skimmer selected yet.</p>";
-
-  setSummaryExtra(`
-    <p>Run duration: ${durationSec}s</p>
-    <p>${ctyText}</p>
-    <p>Slot outcomes:</p>
-    ${slotLines}
-    <p>Selected skimmers:</p>
-    ${skimmers}
-  `);
 }
 
 function syncStateFromModel(model) {
@@ -601,7 +561,7 @@ function renderAnalysisCharts() {
   if (!state.analysis) {
     ui.chartsRoot.classList.add("empty-state");
     ui.chartsRoot.innerHTML = "<p>No analysis results yet.</p>";
-    renderSummaryFromAnalysis();
+    setLoadCheck(ui.checkCharts, "pending");
     return;
   }
 
@@ -614,7 +574,7 @@ function renderAnalysisCharts() {
         ${renderChartFailures()}
       </div>
     `;
-    renderSummaryFromAnalysis();
+    setLoadCheck(ui.checkCharts, "error");
     return;
   }
 
@@ -699,7 +659,7 @@ function renderAnalysisCharts() {
     <div class="rbn-signal-grid">${cardsHtml}</div>
   `;
 
-  renderSummaryFromAnalysis();
+  setLoadCheck(ui.checkCharts, "ok");
   bindChartInteractions(slots);
 }
 
@@ -707,7 +667,6 @@ function refreshFormState(options = {}) {
   const { silentStatus = false } = options;
   const model = collectInputModel();
   const validation = validateModel(model);
-  writeSummary(model);
   syncStateFromModel(model);
 
   if (state.status === "running") {
@@ -743,6 +702,7 @@ function handleReset() {
     state.chart.selectedByContinent = {};
     teardownChartObservers();
     suggestSecondaryDateFromPrimary();
+    resetLoadChecks();
     setStatus("idle", "Enter required fields to enable analysis.");
     renderAnalysisCharts();
     refreshFormState();
@@ -760,16 +720,27 @@ async function handleSubmit(event) {
 
   const runToken = state.activeRunToken + 1;
   state.activeRunToken = runToken;
+  resetLoadChecks();
+  setLoadCheck(ui.checkFetch, "loading");
   setStatus("running", "Fetching RBN data for selected callsigns...");
   ui.startButton.disabled = true;
 
   try {
     const result = await runRbnAnalysis(model);
     if (runToken !== state.activeRunToken) return;
+    setLoadCheck(ui.checkFetch, "ok");
 
+    setLoadCheck(ui.checkCty, "loading");
     setStatus("running", "Loading continent prefixes (cty.dat)...");
-    await preloadCtyData();
+    const ctyState = await preloadCtyData();
     if (runToken !== state.activeRunToken) return;
+    if (ctyState?.status === "ok") {
+      setLoadCheck(ui.checkCty, "ok");
+    } else if (ctyState?.status === "loading") {
+      setLoadCheck(ui.checkCty, "loading");
+    } else {
+      setLoadCheck(ui.checkCty, "error");
+    }
 
     state.analysis = result;
     renderAnalysisCharts();
@@ -800,6 +771,15 @@ async function handleSubmit(event) {
     }
   } catch (error) {
     if (runToken !== state.activeRunToken) return;
+    if (ui.checkFetch?.dataset.state === "loading") {
+      setLoadCheck(ui.checkFetch, "error");
+    }
+    if (ui.checkCty?.dataset.state === "loading") {
+      setLoadCheck(ui.checkCty, "error");
+    }
+    if (ui.checkCharts?.dataset.state === "loading") {
+      setLoadCheck(ui.checkCharts, "error");
+    }
     setStatus("error", error?.message || "Analysis run failed.");
   } finally {
     if (runToken === state.activeRunToken) {
@@ -823,15 +803,14 @@ function bindEvents() {
 }
 
 function preloadBackgroundData() {
-  preloadCtyData().then(() => {
-    if (state.analysis) renderSummaryFromAnalysis();
-  }).catch(() => {
+  preloadCtyData().catch(() => {
     // Keep fallback continent inference if cty.dat is unavailable.
   });
 }
 
 bindEvents();
 preloadBackgroundData();
+resetLoadChecks();
 renderAnalysisCharts();
 refreshFormState();
 

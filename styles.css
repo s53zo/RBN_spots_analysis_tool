@@ -74,6 +74,11 @@ p {
   box-shadow: var(--shadow);
 }
 
+.hero-main {
+  display: grid;
+  gap: 0.55rem;
+}
+
 .kicker {
   font-size: 0.72rem;
   font-weight: 700;
@@ -88,10 +93,72 @@ p {
 }
 
 .hero-sub {
-  margin-top: 0.3rem;
+  margin-top: 0.22rem;
   color: var(--text-muted);
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   max-width: 72ch;
+}
+
+.hero-steps {
+  margin: 0.38rem 0 0;
+  padding-inline-start: 1.2rem;
+  color: #324e72;
+  font-size: 0.88rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.hero-checks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  margin-left: 0.45rem;
+}
+
+.hero-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  border: 1px solid #cad8eb;
+  border-radius: 999px;
+  padding: 0.08rem 0.48rem;
+  font-size: 0.75rem;
+  color: #445f80;
+  background: #eef4fc;
+  white-space: nowrap;
+}
+
+.hero-check-mark {
+  font-weight: 700;
+  width: 0.7rem;
+  text-align: center;
+}
+
+.hero-check[data-state="ok"] {
+  border-color: #b9e5cf;
+  background: #ddf4e9;
+  color: #0b6840;
+}
+
+.hero-check[data-state="loading"] {
+  border-color: #f4d7a7;
+  background: #faedd7;
+  color: #81550a;
+}
+
+.hero-check[data-state="error"] {
+  border-color: #f2bcb5;
+  background: #fae2df;
+  color: #872e26;
+}
+
+.hero-status {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 0.35rem;
+  border-top: 1px dashed #cad7e9;
+  padding-top: 0.5rem;
 }
 
 .panel {
@@ -117,22 +184,34 @@ p {
 
 #analysis-form {
   display: grid;
-  gap: 0.9rem;
+  gap: 0.6rem;
 }
 
 .field-grid {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.55rem;
+}
+
+.setup-row {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(10rem, 1fr);
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
 }
 
 .field {
   display: grid;
   gap: 0.35rem;
+  min-width: 10rem;
 }
 
 .field label {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 600;
+}
+
+.field-actions {
+  min-width: 13.2rem;
 }
 
 .req {
@@ -171,13 +250,13 @@ select:focus-visible {
 
 .actions-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.55rem;
 }
 
 button {
   min-width: 2.75rem;
-  min-height: 2.75rem;
+  min-height: 2.65rem;
   padding: 0.63rem 1rem;
   border-radius: 0.65rem;
   border: 1px solid transparent;
@@ -209,11 +288,6 @@ button {
 
 .btn-ghost:hover {
   background: var(--accent-soft);
-}
-
-.status-panel {
-  display: grid;
-  gap: 0.4rem;
 }
 
 .status-pill {
@@ -253,55 +327,8 @@ button {
 
 .status-message {
   color: var(--text-muted);
-}
-
-.summary-grid {
-  margin: 0;
-  display: grid;
-  gap: 0.55rem;
-  grid-template-columns: 1fr;
-}
-
-.summary-grid dt {
-  font-size: 0.8rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.summary-grid dd {
-  margin: 0.1rem 0 0;
-  font-weight: 600;
-}
-
-.summary-extra {
-  margin-top: 0.7rem;
-  padding-top: 0.65rem;
-  border-top: 1px dashed var(--border);
-  display: grid;
-  gap: 0.35rem;
-}
-
-.summary-extra p {
   font-size: 0.88rem;
-  color: var(--text-muted);
-}
-
-#run-summary-details {
-  display: grid;
-  gap: 0.6rem;
-}
-
-#run-summary-details summary {
-  cursor: pointer;
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--text);
-}
-
-#run-summary-details summary:hover {
-  color: var(--accent);
+  line-height: 1.3;
 }
 
 .charts-root {
@@ -325,14 +352,6 @@ button {
   .panel {
     padding: 0.88rem;
   }
-
-  .field-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (min-width: 64rem) {
@@ -342,30 +361,28 @@ button {
   }
 
   .hero,
-  .status-panel {
-    grid-column: span 12;
-  }
-
-  .input-panel {
-    grid-column: span 12;
-  }
-
-  .summary-panel {
-    grid-column: span 12;
-  }
-
+  .input-panel,
   .charts-panel {
     grid-column: span 12;
+  }
+
+  .hero-main {
+    grid-template-columns: minmax(0, 3.2fr) minmax(16rem, 1.05fr);
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .hero-status {
+    border-top: 0;
+    border-left: 1px dashed #cad7e9;
+    padding-top: 0;
+    padding-left: 0.75rem;
   }
 }
 
 @media (min-width: 90rem) {
   .panel {
     padding: 0.95rem;
-  }
-
-  .field-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 

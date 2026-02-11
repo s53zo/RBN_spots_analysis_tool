@@ -16,11 +16,37 @@
     <div class="bg-grid" aria-hidden="true"></div>
     <main class="app-shell">
       <header class="hero">
-        <p class="kicker">RBN Analysis Tool</p>
-        <h1>RBN Signal Comparative Analysis</h1>
-        <p class="hero-sub">
-          Pick up to two UTC dates, enter your callsign, and optionally compare with up to three others.
-        </p>
+        <div class="hero-main">
+          <div>
+            <p class="kicker">RBN Analysis Tool</p>
+            <h1>RBN Signal Comparative Analysis</h1>
+            <p class="hero-sub">
+              Pick up to two UTC dates, enter your callsign, and optionally compare with up to three others.
+            </p>
+            <ol class="hero-steps">
+              <li>Choose one or two UTC dates.</li>
+              <li>Enter your callsign and optional comparison callsigns.</li>
+              <li>
+                Start analysis
+                <span class="hero-checks" aria-label="Data loading progress">
+                  <span id="check-fetch" class="hero-check" data-state="pending"
+                    ><span class="hero-check-mark" aria-hidden="true">○</span>RBN data</span
+                  >
+                  <span id="check-cty" class="hero-check" data-state="pending"
+                    ><span class="hero-check-mark" aria-hidden="true">○</span>cty.dat</span
+                  >
+                  <span id="check-charts" class="hero-check" data-state="pending"
+                    ><span class="hero-check-mark" aria-hidden="true">○</span>Charts</span
+                  >
+                </span>
+              </li>
+            </ol>
+          </div>
+          <aside class="hero-status" aria-live="polite">
+            <div id="status-pill" class="status-pill" data-state="idle">Idle</div>
+            <p id="status-message" class="status-message">Enter required fields to enable analysis.</p>
+          </aside>
+        </div>
       </header>
 
       <section class="panel input-panel" aria-labelledby="analysis-setup-heading">
@@ -30,7 +56,7 @@
         </div>
 
         <form id="analysis-form" novalidate>
-          <div class="field-grid">
+          <div class="field-grid setup-row">
             <div class="field">
               <label for="date-primary">Date 1 (UTC) <span class="req">*</span></label>
               <input id="date-primary" name="datePrimary" type="date" required />
@@ -88,18 +114,15 @@
                 placeholder="JA1AAA"
               />
             </div>
-          </div>
-
-          <div class="actions-row">
-            <button id="start-analysis" class="btn-primary" type="submit" disabled>Start analysis</button>
-            <button id="reset-analysis" class="btn-ghost" type="reset">Reset</button>
+            <div class="field field-actions">
+              <label for="start-analysis">Run</label>
+              <div class="actions-row">
+                <button id="start-analysis" class="btn-primary" type="submit" disabled>Start analysis</button>
+                <button id="reset-analysis" class="btn-ghost" type="reset">Reset</button>
+              </div>
+            </div>
           </div>
         </form>
-      </section>
-
-      <section class="panel status-panel" aria-live="polite">
-        <div id="status-pill" class="status-pill" data-state="idle">Idle</div>
-        <p id="status-message" class="status-message">Enter required fields to enable analysis.</p>
       </section>
 
       <section class="panel charts-panel" aria-labelledby="charts-heading">
@@ -110,33 +133,6 @@
         <div id="charts-root" class="charts-root empty-state">
           <p>No analysis results yet.</p>
         </div>
-      </section>
-
-      <section class="panel summary-panel" aria-labelledby="run-summary-heading">
-        <details id="run-summary-details">
-          <summary id="run-summary-heading">Run Summary</summary>
-          <dl id="run-summary" class="summary-grid">
-            <div>
-              <dt>Dates</dt>
-              <dd>-</dd>
-            </div>
-            <div>
-              <dt>Primary</dt>
-              <dd>-</dd>
-            </div>
-            <div>
-              <dt>Comparisons</dt>
-              <dd>-</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>Not started</dd>
-            </div>
-          </dl>
-          <div id="run-summary-extra" class="summary-extra">
-            <p>No run metadata yet.</p>
-          </div>
-        </details>
       </section>
     </main>
 
