@@ -10,7 +10,6 @@ import {
   getOrBuildRanking,
   sampleFlatStrideSeeded,
   computeProportionalCaps,
-  slotDataKey,
 } from "./src/rbn-compare-index.mjs";
 import { bandColorForChart, drawRbnSignalCanvas, slotLineDash, slotMarkerShape } from "./src/rbn-canvas.mjs";
 
@@ -27,6 +26,12 @@ const state = {
   },
   activeRunToken: 0,
   analysis: null,
+  retry: {
+    timer: 0,
+    untilTs: 0,
+    status: "ready",
+    baseMessage: "",
+  },
   chart: {
     selectedBand: "",
     selectedByContinent: {},
@@ -48,6 +53,7 @@ const ui = {
   statusPill: document.querySelector("#status-pill"),
   statusMessage: document.querySelector("#status-message"),
   summary: document.querySelector("#run-summary"),
+  summaryExtra: document.querySelector("#run-summary-extra"),
   chartsRoot: document.querySelector("#charts-root"),
 };
 
@@ -62,6 +68,15 @@ function formatNumber(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return String(value || 0);
   return num.toLocaleString("en-US");
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function slotTitle(slot) {
@@ -152,6 +167,78 @@ function writeSummary(model) {
   summaryCells.dates.textContent = model.dates.length ? model.dates.join(" and ") : "-";
   summaryCells.primary.textContent = model.primary || "-";
   summaryCells.comparisons.textContent = model.comparisons.length ? model.comparisons.join(", ") : "None";
+}
+
+function setSummaryExtra(html) {
+  ui.summaryExtra.innerHTML = html;
+}
+
+function clearRetryCountdown() {
+  if (state.retry.timer) {
+    clearInterval(state.retry.timer);
+    state.retry.timer = 0;
+  }
+  state.retry.untilTs = 0;
+  state.retry.baseMessage = "";
+}
+
+function startRetryCountdown(ms, baseMessage, status = "ready") {
+  clearRetryCountdown();
+  const durationMs = Math.max(1000, Number(ms) || 1000);
+  state.retry.untilTs = Date.now() + durationMs;
+  state.retry.baseMessage = baseMessage;
+  state.retry.status = status;
+
+  const tick = () => {
+    const remainingMs = state.retry.untilTs - Date.now();
+    if (remainingMs <= 0) {
+      clearRetryCountdown();
+      setStatus(status, `${baseMessage} Retry available now.`);
+      return;
+    }
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    setStatus(status, `${baseMessage} Retry in ${remainingSec}s.`);
+  };
+
+  tick();
+  state.retry.timer = setInterval(tick, 1000);
+}
+
+function renderSummaryFromAnalysis() {
+  if (!state.analysis) {
+    setSummaryExtra("<p>No run metadata yet.</p>");
+    return;
+  }
+
+  const durationSec = Math.max(0, Math.round((state.analysis.durationMs || 0) / 1000));
+  const slotLines = state.analysis.slots
+    .map((slot) => {
+      if (slot.status === "ready") {
+        return `${slotTitle(slot)} ${escapeHtml(slot.call)}: ${formatNumber(slot.totalOfUs)} of-us, ${formatNumber(slot.totalByUs)} by-us`;
+      }
+      if (slot.status === "qrx") {
+        return `${slotTitle(slot)} ${escapeHtml(slot.call)}: rate limited`;
+      }
+      return `${slotTitle(slot)} ${escapeHtml(slot.call)}: ${escapeHtml(slot.error || "error")}`;
+    })
+    .map((line) => `<p>${line}</p>`)
+    .join("");
+
+  const skimmerPairs = Object.entries(state.chart.selectedByContinent || {}).filter(([, value]) => Boolean(value));
+  const skimmers = skimmerPairs.length
+    ? skimmerPairs
+        .map(([continent, value]) => `${continentLabel(continent)}: ${escapeHtml(value)}`)
+        .map((line) => `<p>${line}</p>`)
+        .join("")
+    : "<p>No skimmer selected yet.</p>";
+
+  setSummaryExtra(`
+    <p>Run duration: ${durationSec}s</p>
+    <p>Slot outcomes:</p>
+    ${slotLines}
+    <p>Selected skimmers:</p>
+    ${skimmers}
+  `);
 }
 
 function syncStateFromModel(model) {
@@ -485,8 +572,14 @@ function renderChartFailures() {
     <div class="chart-failures">
       ${failed
         .map(
-          (slot) =>
-            `<p><b>${slotTitle(slot)} (${slot.call})</b>: ${slot.status === "qrx" ? "Rate limited" : slot.error || "Failed"}</p>`,
+          (slot) => {
+            if (slot.status === "qrx") {
+              const wait = Math.ceil(Math.max(0, Number(slot.retryAfterMs) || 0) / 1000);
+              const text = wait ? `Rate limited, retry in ~${wait}s` : "Rate limited";
+              return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${text}</p>`;
+            }
+            return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${escapeHtml(slot.error || "Failed")}</p>`;
+          },
         )
         .join("")}
     </div>
@@ -498,7 +591,7 @@ function renderSlotLegend(slots) {
     .map(
       (slot) => `
         <span class="slot-chip">
-          <span class="slot-chip-call">${slot.call}</span>
+          <span class="slot-chip-call">${escapeHtml(slot.call)}</span>
           <span class="slot-chip-marker">${slotMarkerSymbol(slot.id)}</span>
           <span class="slot-chip-line">${slotLineSample(slot.id)}</span>
         </span>
@@ -511,6 +604,7 @@ function renderAnalysisCharts() {
   if (!state.analysis) {
     ui.chartsRoot.classList.add("empty-state");
     ui.chartsRoot.innerHTML = "<p>No analysis results yet.</p>";
+    renderSummaryFromAnalysis();
     return;
   }
 
@@ -523,6 +617,7 @@ function renderAnalysisCharts() {
         ${renderChartFailures()}
       </div>
     `;
+    renderSummaryFromAnalysis();
     return;
   }
 
@@ -555,7 +650,7 @@ function renderAnalysisCharts() {
             .slice(0, 80)
             .map(
               (item) =>
-                `<option value="${item.spotter}" ${item.spotter === selectedSpotter ? "selected" : ""}>${item.spotter} (${formatNumber(item.count)})</option>`,
+                `<option value="${escapeHtml(item.spotter)}" ${item.spotter === selectedSpotter ? "selected" : ""}>${escapeHtml(item.spotter)} (${formatNumber(item.count)})</option>`,
             )
             .join("")
         : "<option value=''>No skimmers</option>";
@@ -576,7 +671,7 @@ function renderAnalysisCharts() {
           </div>
           <div class="rbn-signal-body">
             <div class="rbn-signal-plot">
-              <canvas class="rbn-signal-canvas" data-continent="${continent}" data-spotter="${selectedSpotter}" data-height="280"></canvas>
+              <canvas class="rbn-signal-canvas" data-continent="${continent}" data-spotter="${escapeHtml(selectedSpotter)}" data-height="280"></canvas>
               <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
             </div>
             <div class="rbn-signal-legend">
@@ -600,17 +695,19 @@ function renderAnalysisCharts() {
           )
           .join("")}
       </select>
-      <span class="chart-controls-note">Primary ranking source: ${baseSlot.call}</span>
+      <span class="chart-controls-note">Primary ranking source: ${escapeHtml(baseSlot.call)}</span>
     </div>
     <div class="slot-legend">${renderSlotLegend(slots)}</div>
     ${renderChartFailures()}
     <div class="rbn-signal-grid">${cardsHtml}</div>
   `;
 
+  renderSummaryFromAnalysis();
   bindChartInteractions(slots);
 }
 
-function refreshFormState() {
+function refreshFormState(options = {}) {
+  const { silentStatus = false } = options;
   const model = collectInputModel();
   const validation = validateModel(model);
   writeSummary(model);
@@ -622,21 +719,28 @@ function refreshFormState() {
   }
 
   ui.startButton.disabled = !validation.ok;
-  if (validation.ok) {
-    setStatus("ready", validation.reason);
-  } else {
-    setStatus("idle", validation.reason);
+  const retryActive = state.retry.untilTs > Date.now();
+  if (!silentStatus && !retryActive) {
+    if (validation.ok) {
+      setStatus("ready", validation.reason);
+    } else {
+      setStatus("idle", validation.reason);
+    }
   }
 
   return { model, validation };
 }
 
 function handleInput() {
+  if (state.retry.untilTs > Date.now() && state.status !== "running") {
+    clearRetryCountdown();
+  }
   refreshFormState();
 }
 
 function handleReset() {
   queueMicrotask(() => {
+    clearRetryCountdown();
     state.analysis = null;
     state.chart.selectedBand = "";
     state.chart.selectedByContinent = {};
@@ -649,7 +753,8 @@ function handleReset() {
 
 async function handleSubmit(event) {
   event.preventDefault();
-  const { model, validation } = refreshFormState();
+  clearRetryCountdown();
+  const { model, validation } = refreshFormState({ silentStatus: true });
   if (!validation.ok) {
     setStatus("error", validation.reason);
     return;
@@ -668,22 +773,36 @@ async function handleSubmit(event) {
     renderAnalysisCharts();
 
     const loaded = result.slots.filter((slot) => slot.status === "ready").length;
+    const qrxSlots = result.slots.filter((slot) => slot.status === "qrx");
     const failed = result.slots.filter((slot) => slot.status === "error" || slot.status === "qrx").length;
+    const hasData = result.slots.some((slot) => slot.status === "ready" && (slot.totalOfUs > 0 || slot.totalByUs > 0));
 
-    if (failed && loaded) {
+    if (failed && loaded && hasData) {
       setStatus("ready", `Analysis completed with partial results (${loaded} loaded, ${failed} failed).`);
+    } else if (failed && loaded && !hasData) {
+      setStatus("ready", `Analysis loaded but found no spots (${loaded} loaded, ${failed} failed).`);
     } else if (failed && !loaded) {
       setStatus("error", "Analysis failed for all callsigns.");
+    } else if (!hasData) {
+      setStatus("ready", "Analysis completed but no RBN spots matched the selected callsigns/dates.");
     } else {
       setStatus("ready", `Analysis completed for ${loaded} callsign${loaded === 1 ? "" : "s"}.`);
+    }
+
+    if (qrxSlots.length) {
+      const retryMs = Math.max(...qrxSlots.map((slot) => Number(slot.retryAfterMs) || 15000));
+      const baseMessage = loaded
+        ? `Partial results shown. ${qrxSlots.length} slot${qrxSlots.length === 1 ? "" : "s"} rate limited.`
+        : `Rate limited for ${qrxSlots.length} slot${qrxSlots.length === 1 ? "" : "s"}.`;
+      startRetryCountdown(retryMs, baseMessage, loaded ? "ready" : "error");
     }
   } catch (error) {
     if (runToken !== state.activeRunToken) return;
     setStatus("error", error?.message || "Analysis run failed.");
   } finally {
     if (runToken === state.activeRunToken) {
-      const next = refreshFormState();
-      if (next.validation.ok && state.status !== "error") {
+      const next = refreshFormState({ silentStatus: true });
+      if (next.validation.ok && state.status !== "running") {
         ui.startButton.disabled = false;
       }
     }

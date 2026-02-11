@@ -265,6 +265,19 @@ button {
   font-weight: 600;
 }
 
+.summary-extra {
+  margin-top: 0.7rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed var(--border);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.summary-extra p {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
 .charts-root {
   min-height: 10rem;
   border-radius: 0.75rem;
