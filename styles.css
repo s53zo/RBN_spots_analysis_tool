@@ -270,6 +270,26 @@ select:focus-visible {
   outline-offset: 0.11rem;
 }
 
+.flatpickr-calendar .flatpickr-weekday:nth-child(6),
+.flatpickr-calendar .flatpickr-weekday:nth-child(7) {
+  color: #2c3d57;
+  font-weight: 700;
+}
+
+.flatpickr-calendar .flatpickr-day.weekend:not(.selected):not(.startRange):not(.endRange):not(.inRange):not(
+    .flatpickr-disabled
+  ) {
+  background: #e3ecf9;
+  border-color: #cfdbef;
+  color: #1f2f48;
+}
+
+.flatpickr-calendar .flatpickr-day.weekend:not(.selected):not(.startRange):not(.endRange):not(.inRange):not(
+    .flatpickr-disabled
+  ):hover {
+  background: #d6e3f6;
+}
+
 .actions-row {
   display: flex;
   flex-wrap: nowrap;

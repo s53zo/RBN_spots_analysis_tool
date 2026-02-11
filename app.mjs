@@ -203,6 +203,9 @@ function initDatePickers() {
     disableMobile: true,
     clickOpens: true,
     static: false,
+    locale: {
+      firstDayOfWeek: 1,
+    },
   };
 
   state.datePickers.primary = flatpickrFn(ui.datePrimary, {
