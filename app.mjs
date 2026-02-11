@@ -1,3 +1,6 @@
+import { runRbnAnalysis } from "./src/rbn-orchestrator.mjs";
+import { normalizeCall } from "./src/rbn-normalize.mjs";
+
 const CALLSIGN_PATTERN = /^[A-Z0-9/-]{3,20}$/;
 
 const state = {
@@ -9,7 +12,8 @@ const state = {
     C: { call: "" },
     D: { call: "" },
   },
-  lastError: "",
+  activeRunToken: 0,
+  analysis: null,
 };
 
 const ui = {
@@ -24,6 +28,7 @@ const ui = {
   statusPill: document.querySelector("#status-pill"),
   statusMessage: document.querySelector("#status-message"),
   summary: document.querySelector("#run-summary"),
+  chartsRoot: document.querySelector("#charts-root"),
 };
 
 const summaryCells = {
@@ -33,17 +38,13 @@ const summaryCells = {
   status: ui.summary.querySelector("div:nth-child(4) dd"),
 };
 
-function normalizeCallsign(value) {
-  return (value || "").trim().toUpperCase();
-}
-
 function collectInputModel() {
   const dates = [ui.datePrimary.value, ui.dateSecondary.value].filter(Boolean);
   const calls = [
-    normalizeCallsign(ui.callPrimary.value),
-    normalizeCallsign(ui.callCompare1.value),
-    normalizeCallsign(ui.callCompare2.value),
-    normalizeCallsign(ui.callCompare3.value),
+    normalizeCall(ui.callPrimary.value),
+    normalizeCall(ui.callCompare1.value),
+    normalizeCall(ui.callCompare2.value),
+    normalizeCall(ui.callCompare3.value),
   ];
 
   return {
@@ -111,6 +112,50 @@ function syncStateFromModel(model) {
   state.slots.D.call = model.comparisons[2] || "";
 }
 
+function formatSlotLine(slot) {
+  const label = slot.id === "A" ? "Primary" : `Compare ${slot.id}`;
+  if (slot.status === "ready") {
+    const qty = Number(slot.totalOfUs || 0);
+    const suffix = qty === 1 ? "spot" : "spots";
+    return `${label} (${slot.call}): ${qty} of-us ${suffix}`;
+  }
+  if (slot.status === "qrx") {
+    return `${label} (${slot.call}): rate limited`;
+  }
+  return `${label} (${slot.call}): ${slot.error || "error"}`;
+}
+
+function renderSlotResults(result) {
+  if (!result || !Array.isArray(result.slots) || !result.slots.length) {
+    ui.chartsRoot.classList.add("empty-state");
+    ui.chartsRoot.innerHTML = "<p>No analysis results yet.</p>";
+    return;
+  }
+
+  const rows = result.slots
+    .map((slot) => {
+      const stateClass = `slot-${slot.status}`;
+      const totals = slot.status === "ready" ? `${slot.totalOfUs} of-us / ${slot.totalByUs} by-us` : "-";
+      return `
+        <article class="slot-card ${stateClass}">
+          <header>
+            <h3>${slot.id === "A" ? "Primary" : `Compare ${slot.id}`}</h3>
+            <p>${slot.call}</p>
+          </header>
+          <dl>
+            <div><dt>Status</dt><dd>${slot.status}</dd></div>
+            <div><dt>Totals</dt><dd>${totals}</dd></div>
+            <div><dt>Days</dt><dd>${result.days.join(", ") || "-"}</dd></div>
+          </dl>
+        </article>
+      `;
+    })
+    .join("");
+
+  ui.chartsRoot.classList.remove("empty-state");
+  ui.chartsRoot.innerHTML = `<div class="slot-grid">${rows}</div>`;
+}
+
 function refreshFormState() {
   const model = collectInputModel();
   const validation = validateModel(model);
@@ -137,24 +182,51 @@ function handleInput() {
 
 function handleReset() {
   queueMicrotask(() => {
-    state.lastError = "";
+    state.analysis = null;
     setStatus("idle", "Enter required fields to enable analysis.");
+    renderSlotResults(null);
     refreshFormState();
   });
 }
 
-function handleSubmit(event) {
+async function handleSubmit(event) {
   event.preventDefault();
   const { model, validation } = refreshFormState();
   if (!validation.ok) {
     setStatus("error", validation.reason);
-    state.lastError = validation.reason;
     return;
   }
 
-  setStatus("running", "Sprint 1 scaffold complete. Data fetch wiring starts in Sprint 2.");
+  const runToken = state.activeRunToken + 1;
+  state.activeRunToken = runToken;
+  setStatus("running", "Fetching RBN data for selected callsigns...");
   ui.startButton.disabled = true;
-  writeSummary(model);
+
+  try {
+    const result = await runRbnAnalysis(model);
+    if (runToken !== state.activeRunToken) return;
+    state.analysis = result;
+    renderSlotResults(result);
+
+    const lines = result.slots.map(formatSlotLine).join(" | ");
+    if (result.hasAnyFailure && result.hasAnyLoaded) {
+      setStatus("ready", `Analysis finished with partial results. ${lines}`);
+    } else if (result.hasAnyFailure && !result.hasAnyLoaded) {
+      setStatus("error", `Analysis failed. ${lines}`);
+    } else {
+      setStatus("ready", `Analysis finished. ${lines}`);
+    }
+  } catch (error) {
+    if (runToken !== state.activeRunToken) return;
+    setStatus("error", error?.message || "Analysis run failed.");
+  } finally {
+    if (runToken === state.activeRunToken) {
+      const current = refreshFormState();
+      if (current.validation.ok && state.status !== "error") {
+        setStatus("ready", ui.statusMessage.textContent);
+      }
+    }
+  }
 }
 
 function bindEvents() {
@@ -164,6 +236,7 @@ function bindEvents() {
 }
 
 bindEvents();
+renderSlotResults(null);
 refreshFormState();
 
-export { normalizeCallsign, validateModel };
+export { validateModel };
