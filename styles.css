@@ -652,6 +652,36 @@ select[aria-invalid="true"] {
   justify-content: flex-start;
 }
 
+.chapter-pane-skimmer .rbn-signal-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  justify-content: initial;
+  gap: 0.55rem;
+  overflow: visible;
+}
+
+.chapter-pane-skimmer .rbn-signal-legend {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.chapter-pane-skimmer .rbn-signal-legend h5 {
+  width: 100%;
+}
+
+.chapter-pane-skimmer .rbn-signal-legend-bands {
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+}
+
+.chapter-pane-skimmer .rbn-signal-calls {
+  border-top: 1px dashed #ccdaee;
+  padding-top: 0.45rem;
+}
+
 button {
   min-width: 2.75rem;
   min-height: 2.65rem;

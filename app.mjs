@@ -3075,7 +3075,7 @@ function renderSkimmerPeerSuggestions() {
     .join("");
 }
 
-function pickBestTargetFromSlot(slot) {
+function getTopTargetsFromSlot(slot, maxTargets = 6) {
   const spots = Array.isArray(slot?.raw?.ofUsSpots) ? slot.raw.ofUsSpots : [];
   const counts = new Map();
   for (const rawSpot of spots) {
@@ -3084,15 +3084,13 @@ function pickBestTargetFromSlot(slot) {
     if (!target) continue;
     counts.set(target, (counts.get(target) || 0) + 1);
   }
-  let bestCall = "";
-  let bestCount = 0;
-  for (const [call, count] of counts.entries()) {
-    if (count > bestCount) {
-      bestCall = call;
-      bestCount = count;
-    }
-  }
-  return { call: bestCall, count: bestCount };
+  return Array.from(counts.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return String(a[0] || "").localeCompare(String(b[0] || ""));
+    })
+    .slice(0, Math.max(1, Number(maxTargets) || 6))
+    .map(([call, count]) => ({ call, count }));
 }
 
 function getNextEmptySkimmerCompareInput() {
@@ -3117,6 +3115,34 @@ function buildSkimmerPeerGroupMatches(primaryGeo, candidateGeo) {
   return matches;
 }
 
+async function fetchRbnSpotsDaySafe(call, daysInput) {
+  const days = Array.from(new Set((Array.isArray(daysInput) ? daysInput : []).filter(Boolean)));
+  if (!days.length) return { ofUsSpots: [] };
+
+  const chunkSize = 2;
+  const merged = { ofUsSpots: [] };
+  let successCount = 0;
+  let lastError = null;
+
+  for (let i = 0; i < days.length; i += chunkSize) {
+    const chunk = days.slice(i, i + chunkSize);
+    try {
+      const raw = await fetchRbnSpots(call, chunk);
+      if (Array.isArray(raw?.ofUsSpots) && raw.ofUsSpots.length) {
+        merged.ofUsSpots.push(...raw.ofUsSpots);
+      }
+      successCount += 1;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!successCount) {
+    throw lastError || new Error("Failed to load pivot spots.");
+  }
+  return merged;
+}
+
 async function discoverSkimmerPeerSuggestions(result, model) {
   const token = skimmerState.peerSuggestions.requestToken + 1;
   skimmerState.peerSuggestions.requestToken = token;
@@ -3133,14 +3159,10 @@ async function discoverSkimmerPeerSuggestions(result, model) {
       throw new Error("Peer suggestions unavailable: missing primary skimmer data.");
     }
 
-    const topTarget = pickBestTargetFromSlot(primarySlot);
-    if (!topTarget.call) {
+    const pivotTargets = getTopTargetsFromSlot(primarySlot, 6);
+    if (!pivotTargets.length) {
       throw new Error("Peer suggestions unavailable: no spotted target to pivot on.");
     }
-
-    const days = Array.isArray(result?.days) ? result.days : [];
-    const raw = await fetchRbnSpots(topTarget.call, days);
-    if (token !== skimmerState.peerSuggestions.requestToken) return;
     const fromTs = Number(result?.fromTs);
     const toTs = Number(result?.toTs);
 
@@ -3156,48 +3178,68 @@ async function discoverSkimmerPeerSuggestions(result, model) {
       ...((Array.isArray(model?.comparisons) ? model.comparisons : []).map((value) => normalizeCall(value || ""))),
     ]);
 
-    const counts = new Map();
-    const spots = Array.isArray(raw?.ofUsSpots) ? raw.ofUsSpots : [];
-    for (const rawSpot of spots) {
-      const spot = normalizeRbnSpot(rawSpot);
-      if (!spot) continue;
-      if (Number.isFinite(fromTs) && spot.ts < fromTs) continue;
-      if (Number.isFinite(toTs) && spot.ts > toTs) continue;
-      const candidate = normalizeCall(spot.spotter);
-      if (!candidate || selectedCalls.has(candidate)) continue;
-      counts.set(candidate, (counts.get(candidate) || 0) + 1);
-    }
+    const days = Array.isArray(result?.days) ? result.days : [];
+    let picked = [];
+    let pickedSource = "";
 
-    const ranked = Array.from(counts.entries())
-      .map(([call, count]) => {
-        const geo = getCallGeoMeta(call, { strict: true });
-        return {
-          call,
-          count,
-          dxcc: String(geo?.dxcc || "").trim(),
-          cqZone: Number.isInteger(geo?.cqZone) ? Number(geo.cqZone) : null,
-          ituZone: Number.isInteger(geo?.ituZone) ? Number(geo.ituZone) : null,
-          continent: String(geo?.continent || "").trim(),
-          groups: buildSkimmerPeerGroupMatches(primaryGeo, geo || {}),
-        };
-      })
-      .filter((row) => row.groups.length > 0)
-      .sort((a, b) => {
-        if (b.count !== a.count) return b.count - a.count;
-        return a.call.localeCompare(b.call);
-      });
+    for (const pivot of pivotTargets) {
+      let raw;
+      try {
+        raw = await fetchRbnSpotsDaySafe(pivot.call, days);
+      } catch {
+        continue;
+      }
+      if (token !== skimmerState.peerSuggestions.requestToken) return;
 
-    const usedCalls = new Set();
-    const picked = [];
-    for (const group of SKIMMER_PEER_GROUPS) {
-      const match = ranked.find((row) => row.groups.includes(group.id) && !usedCalls.has(row.call));
-      if (!match) continue;
-      usedCalls.add(match.call);
-      picked.push({
-        ...match,
-        groupId: group.id,
-        groupLabel: group.label,
-      });
+      const counts = new Map();
+      const spots = Array.isArray(raw?.ofUsSpots) ? raw.ofUsSpots : [];
+      for (const rawSpot of spots) {
+        const spot = normalizeRbnSpot(rawSpot);
+        if (!spot) continue;
+        if (Number.isFinite(fromTs) && spot.ts < fromTs) continue;
+        if (Number.isFinite(toTs) && spot.ts > toTs) continue;
+        const candidate = normalizeCall(spot.spotter);
+        if (!candidate || selectedCalls.has(candidate)) continue;
+        counts.set(candidate, (counts.get(candidate) || 0) + 1);
+      }
+
+      const ranked = Array.from(counts.entries())
+        .map(([call, count]) => {
+          const geo = getCallGeoMeta(call, { strict: true });
+          return {
+            call,
+            count,
+            dxcc: String(geo?.dxcc || "").trim(),
+            cqZone: Number.isInteger(geo?.cqZone) ? Number(geo.cqZone) : null,
+            ituZone: Number.isInteger(geo?.ituZone) ? Number(geo.ituZone) : null,
+            continent: String(geo?.continent || "").trim(),
+            groups: buildSkimmerPeerGroupMatches(primaryGeo, geo || {}),
+          };
+        })
+        .filter((row) => row.groups.length > 0)
+        .sort((a, b) => {
+          if (b.count !== a.count) return b.count - a.count;
+          return a.call.localeCompare(b.call);
+        });
+
+      const usedCalls = new Set();
+      const perTargetPicked = [];
+      for (const group of SKIMMER_PEER_GROUPS) {
+        const match = ranked.find((row) => row.groups.includes(group.id) && !usedCalls.has(row.call));
+        if (!match) continue;
+        usedCalls.add(match.call);
+        perTargetPicked.push({
+          ...match,
+          groupId: group.id,
+          groupLabel: group.label,
+        });
+      }
+
+      if (perTargetPicked.length) {
+        picked = perTargetPicked;
+        pickedSource = pivot.call;
+        break;
+      }
     }
 
     if (!picked.length) {
@@ -3206,7 +3248,7 @@ async function discoverSkimmerPeerSuggestions(result, model) {
 
     skimmerState.peerSuggestions.loading = false;
     skimmerState.peerSuggestions.error = "";
-    skimmerState.peerSuggestions.sourceTarget = topTarget.call;
+    skimmerState.peerSuggestions.sourceTarget = pickedSource;
     skimmerState.peerSuggestions.items = picked;
     renderSkimmerPeerSuggestions();
   } catch (error) {
