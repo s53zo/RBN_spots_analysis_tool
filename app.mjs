@@ -1,7 +1,7 @@
 import { runRbnAnalysis, runRbnLiveAnalysis, runRbnSkimmerComparison } from "./src/rbn-orchestrator.mjs";
 import { normalizeBandToken, normalizeCall } from "./src/rbn-normalize.mjs";
 import { validateAnalysisInput, validateLiveInput, validateSkimmerInput } from "./src/input-validation.mjs";
-import { preloadCtyData } from "./src/cty-lookup.mjs";
+import { preloadCtyData, resolveDxccFromInput } from "./src/cty-lookup.mjs";
 import {
   CONTINENT_ORDER,
   continentLabel,
@@ -383,7 +383,7 @@ function collectSkimmerInputModel() {
 
 function skimmerAreaPlaceholder(areaType) {
   if (areaType === "CONTINENT") return "NA, SA, EU, AF, AS, OC";
-  if (areaType === "DXCC") return "e.g. Slovenia";
+  if (areaType === "DXCC") return "e.g. DL, G, JA, JH or DXCC name";
   if (areaType === "CQ") return "e.g. 14";
   if (areaType === "ITU") return "e.g. 28";
   return "Not required for Global";
@@ -1836,9 +1836,25 @@ async function runSkimmerAnalysis(model) {
       throw new Error("cty.dat is required for skimmer area filtering.");
     }
 
+    let effectiveModel = {
+      ...model,
+      comparisons: [...(model.comparisons || [])],
+    };
+    if (effectiveModel.areaType === "DXCC") {
+      const rawDxccInput = String(effectiveModel.areaValue || "").trim();
+      if (rawDxccInput) {
+        const resolvedDxcc = resolveDxccFromInput(rawDxccInput);
+        if (resolvedDxcc) {
+          effectiveModel.areaValue = resolvedDxcc;
+        } else if (/^[A-Z0-9/]{1,4}$/i.test(rawDxccInput)) {
+          throw new Error(`DXCC prefix ${rawDxccInput.toUpperCase()} not found in cty.dat.`);
+        }
+      }
+    }
+
     setLoadCheck(ui.skimmerCheckFetch, "loading");
     setSkimmerStatus("running", "Fetching RBN data for skimmer comparison...");
-    const result = await runRbnSkimmerComparison(model);
+    const result = await runRbnSkimmerComparison(effectiveModel);
     if (runToken !== skimmerState.activeRunToken) return;
     setLoadCheck(ui.skimmerCheckFetch, "ok");
 

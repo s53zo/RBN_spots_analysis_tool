@@ -173,8 +173,8 @@ function validateSkimmerInput(model) {
       return { ok: false, reason: `${input.areaType} zone must be an integer between 1 and 90.` };
     }
   }
-  if (input.areaType === "DXCC" && input.areaValue.length < 2) {
-    return { ok: false, reason: "DXCC value must include at least 2 characters." };
+  if (input.areaType === "DXCC" && input.areaValue.length < 1) {
+    return { ok: false, reason: "DXCC filter must include a prefix or DXCC name." };
   }
 
   return { ok: true, reason: "Ready to start skimmer comparison." };

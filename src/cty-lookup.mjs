@@ -163,6 +163,25 @@ function getContinentForCall(call) {
   return inferFallbackContinent(call);
 }
 
+function resolveDxccFromInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const meta = getCallGeoMeta(raw, { strict: true });
+  if (meta.matched && meta.dxcc) return String(meta.dxcc).trim();
+
+  if (ctyTable && ctyTable.length) {
+    const upper = raw.toUpperCase();
+    for (const entry of ctyTable) {
+      const country = String(entry?.country || "").trim();
+      if (!country) continue;
+      if (country.toUpperCase() === upper) return country;
+    }
+  }
+
+  return "";
+}
+
 function normalizeZoneValue(value) {
   const num = Number(value);
   if (!Number.isInteger(num) || num < 1 || num > 99) return null;
@@ -249,4 +268,4 @@ function getCtyState() {
   return { ...ctyState, loaded: Boolean(ctyTable && ctyTable.length) };
 }
 
-export { preloadCtyData, getCtyState, getContinentForCall, getCallGeoMeta, normalizeContinent, lookupPrefix };
+export { preloadCtyData, getCtyState, getContinentForCall, getCallGeoMeta, resolveDxccFromInput, normalizeContinent, lookupPrefix };
