@@ -1,5 +1,5 @@
 import { fetchRbnSpots } from "./rbn-api.mjs";
-import { normalizeCall, normalizeRbnSpot, normalizeSelectedDays } from "./rbn-normalize.mjs";
+import { normalizeCall, normalizeRbnSpot, normalizeSelectedDays, normalizeSpotterBase } from "./rbn-normalize.mjs";
 import { getCallGeoMeta } from "./cty-lookup.mjs";
 
 const SLOT_META = [
@@ -266,9 +266,24 @@ function buildSkimmerMergedPayload(slotCall, window, area, dayResults) {
 
   const normalized = normalizeSlotPayload(slotCall, window.days, merged);
   const inRange = (spot) => Number.isFinite(spot?.ts) && spot.ts >= window.fromTs && spot.ts <= window.toTs;
-  const inArea = (spot) => spotterMatchesSkimmerArea(spot?.spotter, area);
-  normalized.raw.ofUsSpots = normalized.raw.ofUsSpots.filter((spot) => inRange(spot) && inArea(spot));
-  normalized.raw.byUsSpots = normalized.raw.byUsSpots.filter((spot) => inRange(spot) && inArea(spot));
+  normalized.raw.ofUsSpots = normalized.raw.ofUsSpots.filter((spot) => inRange(spot));
+  normalized.raw.byUsSpots = normalized.raw.byUsSpots.filter((spot) => inRange(spot));
+
+  // Skimmer comparison is based on what each input callsign spotted.
+  // Remap byUs spots into comparison rows keyed by spotted callsign
+  // so the existing chart pipeline can compare slot A/B/C/D on common targets.
+  normalized.raw.ofUsSpots = normalized.raw.byUsSpots
+    .map((spot) => {
+      const target = normalizeSpotterBase(spot?.dxCall || "");
+      if (!target) return null;
+      return {
+        ...spot,
+        spotter: target,
+        spotterRaw: target,
+      };
+    })
+    .filter((spot) => Boolean(spot) && spotterMatchesSkimmerArea(spot.spotter, area));
+
   normalized.totalOfUs = normalized.raw.ofUsSpots.length;
   normalized.totalByUs = normalized.raw.byUsSpots.length;
   normalized.totalScanned = normalized.totalOfUs + normalized.totalByUs;

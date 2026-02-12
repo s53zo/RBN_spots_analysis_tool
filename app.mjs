@@ -42,6 +42,9 @@ const state = {
     untilTs: 0,
     status: "ready",
     baseMessage: "",
+    attempts: 0,
+    maxAttempts: 3,
+    model: null,
   },
   datePickers: {
     primary: null,
@@ -52,6 +55,7 @@ const state = {
   chart: {
     selectedBands: [],
     selectedByContinent: {},
+    zoomByContinent: {},
     drawRaf: 0,
     resizeObserver: null,
     intersectionObserver: null,
@@ -72,6 +76,7 @@ const liveState = {
   chart: {
     selectedBands: [],
     selectedByContinent: {},
+    zoomByContinent: {},
     drawRaf: 0,
     resizeObserver: null,
     intersectionObserver: null,
@@ -81,6 +86,13 @@ const liveState = {
     intervalMs: 5 * 60 * 1000,
     inFlight: false,
     lastModel: null,
+  },
+  retry: {
+    timer: 0,
+    untilTs: 0,
+    attempts: 0,
+    maxAttempts: 3,
+    model: null,
   },
 };
 
@@ -101,9 +113,20 @@ const skimmerState = {
   chart: {
     selectedBands: [],
     selectedByContinent: {},
+    zoomByContinent: {},
     drawRaf: 0,
     resizeObserver: null,
     intersectionObserver: null,
+  },
+  retry: {
+    timer: 0,
+    untilTs: 0,
+    attempts: 0,
+    maxAttempts: 3,
+    model: null,
+  },
+  validation: {
+    showErrors: false,
   },
 };
 
@@ -158,6 +181,17 @@ const ui = {
   liveChartsRoot: document.querySelector("#live-charts-root"),
   skimmerChartsNote: document.querySelector("#skimmer-charts-note"),
   skimmerChartsRoot: document.querySelector("#skimmer-charts-root"),
+  skimmerValidationSummary: document.querySelector("#skimmer-validation-summary"),
+  skimmerValidationList: document.querySelector("#skimmer-validation-list"),
+  skimmerHelpAreaValue: document.querySelector("#skimmer-help-area-value"),
+  skimmerErrorFrom: document.querySelector("#skimmer-error-from"),
+  skimmerErrorTo: document.querySelector("#skimmer-error-to"),
+  skimmerErrorAreaType: document.querySelector("#skimmer-error-area-type"),
+  skimmerErrorAreaValue: document.querySelector("#skimmer-error-area-value"),
+  skimmerErrorCallPrimary: document.querySelector("#skimmer-error-call-primary"),
+  skimmerErrorCallCompare1: document.querySelector("#skimmer-error-call-compare-1"),
+  skimmerErrorCallCompare2: document.querySelector("#skimmer-error-call-compare-2"),
+  skimmerErrorCallCompare3: document.querySelector("#skimmer-error-call-compare-3"),
 };
 
 let html2CanvasLoadPromise = null;
@@ -505,22 +539,170 @@ function updateLiveFieldValidity(model) {
   );
 }
 
-function updateSkimmerFieldValidity(model) {
+function buildSkimmerValidationReport(model) {
   const invalid = collectSkimmerInvalidFields(model);
-  annotateAllFieldValidity(
+  const fieldErrors = new Map();
+  const addError = (fieldId, message) => {
+    if (!invalid.has(fieldId) || !message) return;
+    if (!fieldErrors.has(fieldId)) fieldErrors.set(fieldId, message);
+  };
+
+  const fromRaw = String(ui.skimmerFrom?.value || "").trim();
+  const toRaw = String(ui.skimmerTo?.value || "").trim();
+  const fromTs = parseDateTimeInputToUtcTs(fromRaw);
+  const toTs = parseDateTimeInputToUtcTs(toRaw);
+  const areaType = String(model?.areaType || "GLOBAL").toUpperCase();
+  const areaValue = String(model?.areaValue || "").trim();
+
+  if (!fromRaw) addError("skimmerFrom", "UTC start time is required.");
+  else if (!Number.isFinite(fromTs)) addError("skimmerFrom", "Use DD-MM-YYYY HH:MM format (UTC).");
+
+  if (!toRaw) addError("skimmerTo", "UTC end time is required.");
+  else if (!Number.isFinite(toTs)) addError("skimmerTo", "Use DD-MM-YYYY HH:MM format (UTC).");
+
+  if (Number.isFinite(fromTs) && Number.isFinite(toTs) && toTs <= fromTs) {
+    addError("skimmerFrom", "Start must be earlier than end.");
+    addError("skimmerTo", "End must be later than start.");
+  }
+
+  if (Number.isFinite(fromTs) && Number.isFinite(toTs) && toTs - fromTs > SKIMMER_MAX_WINDOW_HOURS * 3600 * 1000) {
+    addError("skimmerFrom", "Maximum range is 48 hours.");
+    addError("skimmerTo", "Maximum range is 48 hours.");
+  }
+
+  if (!SKIMMER_AREA_TYPES.has(areaType)) {
+    addError("skimmerAreaType", "Choose a valid scope type.");
+  }
+  if (areaType !== "GLOBAL") {
+    if (!areaValue) {
+      addError("skimmerAreaValue", "Scope value is required for this scope type.");
+    } else if (areaType === "CONTINENT" && !SKIMMER_CONTINENTS.has(areaValue.toUpperCase())) {
+      addError("skimmerAreaValue", "Continent must be one of NA, SA, EU, AF, AS, OC.");
+    } else if (areaType === "CQ" || areaType === "ITU") {
+      const zone = Number(areaValue);
+      if (!Number.isInteger(zone) || zone < 1 || zone > 90) addError("skimmerAreaValue", "Zone must be an integer between 1 and 90.");
+    }
+  }
+
+  if (!model.primary) {
+    addError("skimmerCallPrimary", "Skimmer callsign 1 is required.");
+  } else if (!CALLSIGN_PATTERN.test(model.primary)) {
+    addError("skimmerCallPrimary", "Use 3-20 characters: A-Z, 0-9, / or -.");
+  }
+
+  const compareCalls = [
+    { fieldId: "skimmerCallCompare1", call: normalizeCall(ui.skimmerCallCompare1?.value) },
+    { fieldId: "skimmerCallCompare2", call: normalizeCall(ui.skimmerCallCompare2?.value) },
+    { fieldId: "skimmerCallCompare3", call: normalizeCall(ui.skimmerCallCompare3?.value) },
+  ];
+  for (const item of compareCalls) {
+    if (!item.call) continue;
+    if (!CALLSIGN_PATTERN.test(item.call)) {
+      addError(item.fieldId, "Use 3-20 characters: A-Z, 0-9, / or -.");
+    }
+  }
+
+  const duplicateFields = getDuplicateCallsByField(
     [
-      { id: "skimmerFrom", node: ui.skimmerFrom },
-      { id: "skimmerTo", node: ui.skimmerTo },
-      { id: "skimmerAreaType", node: ui.skimmerAreaType },
-      { id: "skimmerAreaValue", node: ui.skimmerAreaValue },
-      { id: "skimmerCallPrimary", node: ui.skimmerCallPrimary },
-      { id: "skimmerCallCompare1", node: ui.skimmerCallCompare1 },
-      { id: "skimmerCallCompare2", node: ui.skimmerCallCompare2 },
-      { id: "skimmerCallCompare3", node: ui.skimmerCallCompare3 },
-    ],
-    invalid,
-    "skimmer-status-message",
+      { fieldId: "skimmerCallPrimary", call: normalizeCall(ui.skimmerCallPrimary?.value) },
+      ...compareCalls,
+    ].filter((entry) => entry.call),
   );
+  for (const fieldId of duplicateFields) {
+    addError(fieldId, "Callsigns must be unique.");
+  }
+
+  const summaryOrder = [
+    "skimmerCallPrimary",
+    "skimmerCallCompare1",
+    "skimmerCallCompare2",
+    "skimmerCallCompare3",
+    "skimmerFrom",
+    "skimmerTo",
+    "skimmerAreaType",
+    "skimmerAreaValue",
+  ];
+  const summaryLabels = {
+    skimmerCallPrimary: "Skimmer callsign 1",
+    skimmerCallCompare1: "Skimmer callsign 2",
+    skimmerCallCompare2: "Skimmer callsign 3",
+    skimmerCallCompare3: "Skimmer callsign 4",
+    skimmerFrom: "UTC from",
+    skimmerTo: "UTC to",
+    skimmerAreaType: "Skimmer scope type",
+    skimmerAreaValue: "Scope value",
+  };
+  const summary = summaryOrder
+    .filter((fieldId) => fieldErrors.has(fieldId))
+    .map((fieldId) => ({
+      fieldId,
+      text: `${summaryLabels[fieldId]}: ${fieldErrors.get(fieldId)}`,
+    }));
+
+  return { invalid, fieldErrors, summary };
+}
+
+function setSkimmerFieldError(fieldKey, message, options = {}) {
+  const { showFeedback = false } = options;
+  const nodeMap = {
+    skimmerFrom: ui.skimmerErrorFrom,
+    skimmerTo: ui.skimmerErrorTo,
+    skimmerAreaType: ui.skimmerErrorAreaType,
+    skimmerAreaValue: ui.skimmerErrorAreaValue,
+    skimmerCallPrimary: ui.skimmerErrorCallPrimary,
+    skimmerCallCompare1: ui.skimmerErrorCallCompare1,
+    skimmerCallCompare2: ui.skimmerErrorCallCompare2,
+    skimmerCallCompare3: ui.skimmerErrorCallCompare3,
+  };
+  const errorNode = nodeMap[fieldKey];
+  if (!errorNode) return;
+  const show = showFeedback && Boolean(message);
+  errorNode.hidden = !show;
+  errorNode.textContent = show ? String(message) : "";
+}
+
+function updateSkimmerFieldValidity(model, options = {}) {
+  const { showFeedback = false } = options;
+  const report = buildSkimmerValidationReport(model);
+
+  const fields = [
+    { id: "skimmerFrom", node: ui.skimmerFrom, helpId: "skimmer-help-from", errorId: "skimmer-error-from" },
+    { id: "skimmerTo", node: ui.skimmerTo, helpId: "skimmer-help-to", errorId: "skimmer-error-to" },
+    { id: "skimmerAreaType", node: ui.skimmerAreaType, helpId: "skimmer-help-area-type", errorId: "skimmer-error-area-type" },
+    { id: "skimmerAreaValue", node: ui.skimmerAreaValue, helpId: "skimmer-help-area-value", errorId: "skimmer-error-area-value" },
+    { id: "skimmerCallPrimary", node: ui.skimmerCallPrimary, helpId: "skimmer-help-call-primary", errorId: "skimmer-error-call-primary" },
+    { id: "skimmerCallCompare1", node: ui.skimmerCallCompare1, helpId: "skimmer-help-call-compare-1", errorId: "skimmer-error-call-compare-1" },
+    { id: "skimmerCallCompare2", node: ui.skimmerCallCompare2, helpId: "skimmer-help-call-compare-2", errorId: "skimmer-error-call-compare-2" },
+    { id: "skimmerCallCompare3", node: ui.skimmerCallCompare3, helpId: "skimmer-help-call-compare-3", errorId: "skimmer-error-call-compare-3" },
+  ];
+
+  for (const field of fields) {
+    if (!field.node) continue;
+    const invalid = report.invalid.has(field.id);
+    field.node.setAttribute("aria-invalid", invalid ? "true" : "false");
+    field.node.setAttribute(
+      "aria-describedby",
+      [field.helpId, field.errorId].filter(Boolean).join(" "),
+    );
+    setSkimmerFieldError(field.id, report.fieldErrors.get(field.id), { showFeedback });
+  }
+
+  if (ui.skimmerValidationSummary && ui.skimmerValidationList) {
+    const showSummary = showFeedback && report.summary.length > 0;
+    ui.skimmerValidationSummary.hidden = !showSummary;
+    if (showSummary) {
+      ui.skimmerValidationList.innerHTML = report.summary
+        .map(
+          (item) =>
+            `<li><button type="button" data-focus-field="${escapeHtml(item.fieldId)}">${escapeHtml(item.text)}</button></li>`,
+        )
+        .join("");
+    } else {
+      ui.skimmerValidationList.innerHTML = "";
+    }
+  }
+
+  return report;
 }
 
 function collectInputModel() {
@@ -582,6 +764,14 @@ function skimmerAreaPlaceholder(areaType) {
   if (areaType === "CQ") return "e.g. 14";
   if (areaType === "ITU") return "e.g. 28";
   return "Not required for Global";
+}
+
+function skimmerAreaValueHelpText(areaType) {
+  if (areaType === "DXCC") return "DXCC examples: JA, DL, W, or country name.";
+  if (areaType === "CONTINENT") return "Continent examples: EU, NA, AS, SA, AF, OC.";
+  if (areaType === "CQ") return "Enter CQ zone number (1-90).";
+  if (areaType === "ITU") return "Enter ITU zone number (1-90).";
+  return "Global selected: scope value is not required.";
 }
 
 function addUtcDay(isoDate, daysToAdd = 1) {
@@ -773,28 +963,159 @@ function clearRetryCountdown() {
   }
   state.retry.untilTs = 0;
   state.retry.baseMessage = "";
+  state.retry.model = null;
+  state.retry.attempts = 0;
 }
 
-function startRetryCountdown(ms, baseMessage, status = "ready") {
-  clearRetryCountdown();
+function startRetryCountdown(ms, baseMessage, status = "ready", options = {}) {
+  const { autoRetry = false, trigger = null } = options;
+  if (state.retry.timer) {
+    clearInterval(state.retry.timer);
+    state.retry.timer = 0;
+  }
   const durationMs = Math.max(1000, Number(ms) || 1000);
   state.retry.untilTs = Date.now() + durationMs;
   state.retry.baseMessage = baseMessage;
   state.retry.status = status;
 
-  const tick = () => {
+  const tick = async () => {
     const remainingMs = state.retry.untilTs - Date.now();
     if (remainingMs <= 0) {
-      clearRetryCountdown();
+      if (autoRetry && typeof trigger === "function" && state.retry.attempts < state.retry.maxAttempts) {
+        state.retry.attempts += 1;
+        if (state.retry.timer) {
+          clearInterval(state.retry.timer);
+          state.retry.timer = 0;
+        }
+        state.retry.untilTs = 0;
+        setStatus("running", `${baseMessage} Auto-retrying now (${state.retry.attempts}/${state.retry.maxAttempts}).`);
+        await trigger();
+        return;
+      }
+      if (state.retry.timer) {
+        clearInterval(state.retry.timer);
+        state.retry.timer = 0;
+      }
+      state.retry.untilTs = 0;
+      state.retry.baseMessage = "";
       setStatus(status, `${baseMessage} Retry available now.`);
       return;
     }
     const remainingSec = Math.ceil(remainingMs / 1000);
-    setStatus(status, `${baseMessage} Retry in ${remainingSec}s.`);
+    if (autoRetry) {
+      setStatus(
+        status,
+        `${baseMessage} Auto-retry in ${remainingSec}s (attempt ${state.retry.attempts + 1}/${state.retry.maxAttempts}).`,
+      );
+    } else {
+      setStatus(status, `${baseMessage} Retry in ${remainingSec}s.`);
+    }
   };
 
   tick();
   state.retry.timer = setInterval(tick, 1000);
+}
+
+function clearLiveRetryCountdown() {
+  if (liveState.retry.timer) {
+    clearInterval(liveState.retry.timer);
+    liveState.retry.timer = 0;
+  }
+  liveState.retry.untilTs = 0;
+  liveState.retry.attempts = 0;
+  liveState.retry.model = null;
+}
+
+function startLiveRetryCountdown(ms, model, baseMessage) {
+  if (liveState.retry.timer) {
+    clearInterval(liveState.retry.timer);
+    liveState.retry.timer = 0;
+  }
+  liveState.retry.model = { ...model, comparisons: [...(model?.comparisons || [])] };
+  const durationMs = Math.max(1000, Number(ms) || 1000);
+  liveState.retry.untilTs = Date.now() + durationMs;
+
+  const tick = async () => {
+    const remainingMs = liveState.retry.untilTs - Date.now();
+    if (remainingMs <= 0) {
+      if (liveState.retry.attempts >= liveState.retry.maxAttempts || !liveState.retry.model) {
+        clearLiveRetryCountdown();
+        setLiveStatus("error", `${baseMessage} Auto-retry limit reached.`);
+        return;
+      }
+      liveState.retry.attempts += 1;
+      if (liveState.retry.timer) {
+        clearInterval(liveState.retry.timer);
+        liveState.retry.timer = 0;
+      }
+      liveState.retry.untilTs = 0;
+      setLiveStatus(
+        "running",
+        `${baseMessage} Auto-retrying now (${liveState.retry.attempts}/${liveState.retry.maxAttempts}).`,
+      );
+      await runLiveAnalysis(liveState.retry.model, { source: "auto_retry" });
+      return;
+    }
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    setLiveStatus(
+      "ready",
+      `${baseMessage} Auto-retry in ${remainingSec}s (attempt ${liveState.retry.attempts + 1}/${liveState.retry.maxAttempts}).`,
+    );
+  };
+
+  tick();
+  liveState.retry.timer = setInterval(tick, 1000);
+}
+
+function clearSkimmerRetryCountdown() {
+  if (skimmerState.retry.timer) {
+    clearInterval(skimmerState.retry.timer);
+    skimmerState.retry.timer = 0;
+  }
+  skimmerState.retry.untilTs = 0;
+  skimmerState.retry.attempts = 0;
+  skimmerState.retry.model = null;
+}
+
+function startSkimmerRetryCountdown(ms, model, baseMessage) {
+  if (skimmerState.retry.timer) {
+    clearInterval(skimmerState.retry.timer);
+    skimmerState.retry.timer = 0;
+  }
+  skimmerState.retry.model = { ...model, comparisons: [...(model?.comparisons || [])] };
+  const durationMs = Math.max(1000, Number(ms) || 1000);
+  skimmerState.retry.untilTs = Date.now() + durationMs;
+
+  const tick = async () => {
+    const remainingMs = skimmerState.retry.untilTs - Date.now();
+    if (remainingMs <= 0) {
+      if (skimmerState.retry.attempts >= skimmerState.retry.maxAttempts || !skimmerState.retry.model) {
+        clearSkimmerRetryCountdown();
+        setSkimmerStatus("error", `${baseMessage} Auto-retry limit reached.`);
+        return;
+      }
+      skimmerState.retry.attempts += 1;
+      if (skimmerState.retry.timer) {
+        clearInterval(skimmerState.retry.timer);
+        skimmerState.retry.timer = 0;
+      }
+      skimmerState.retry.untilTs = 0;
+      setSkimmerStatus(
+        "running",
+        `${baseMessage} Auto-retrying now (${skimmerState.retry.attempts}/${skimmerState.retry.maxAttempts}).`,
+      );
+      await runSkimmerAnalysis(skimmerState.retry.model, { source: "auto_retry" });
+      return;
+    }
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    setSkimmerStatus(
+      "ready",
+      `${baseMessage} Auto-retry in ${remainingSec}s (attempt ${skimmerState.retry.attempts + 1}/${skimmerState.retry.maxAttempts}).`,
+    );
+  };
+
+  tick();
+  skimmerState.retry.timer = setInterval(tick, 1000);
 }
 
 function syncStateFromModel(model) {
@@ -1042,11 +1363,13 @@ function drawCharts(slots) {
   for (const canvas of canvases) {
     const card = canvas.closest(".rbn-signal-card");
     const continent = String(canvas.dataset.continent || "N/A").toUpperCase();
+    const scopeLabel = String(canvas.dataset.scopeLabel || "").trim();
+    const regionLabel = scopeLabel || continentLabel(continent);
     const spotter = String(canvas.dataset.spotter || "");
 
     if (!spotter) {
       drawRbnSignalCanvas(canvas, {
-        title: `${continentLabel(continent)} · no skimmer`,
+        title: `${regionLabel} · no target station`,
         minTs,
         maxTs,
         minY: -30,
@@ -1077,7 +1400,7 @@ function drawCharts(slots) {
     }
 
     const trendlines = buildTrendlines(model.series, minTs, maxTs);
-    const title = `${continentLabel(continent)} · ${spotter}`;
+    const title = `${regionLabel} · ${spotter}`;
 
     drawRbnSignalCanvas(canvas, {
       title,
@@ -1167,7 +1490,7 @@ function renderChartFailures() {
           (slot) => {
             if (slot.status === "qrx") {
               const wait = Math.ceil(Math.max(0, Number(slot.retryAfterMs) || 0) / 1000);
-              const text = wait ? `Rate limited, retry in ~${wait}s` : "Rate limited";
+              const text = wait ? `Rate limited, will auto retry in ~${wait}s` : "Rate limited, will auto retry.";
               return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${text}</p>`;
             }
             return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${escapeHtml(slot.error || "Failed")}</p>`;
@@ -1445,7 +1768,7 @@ function renderLiveChartFailures() {
           (slot) => {
             if (slot.status === "qrx") {
               const wait = Math.ceil(Math.max(0, Number(slot.retryAfterMs) || 0) / 1000);
-              const text = wait ? `Rate limited, retry in ~${wait}s` : "Rate limited";
+              const text = wait ? `Rate limited, will auto retry in ~${wait}s` : "Rate limited, will auto retry.";
               return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${text}</p>`;
             }
             return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${escapeHtml(slot.error || "Failed")}</p>`;
@@ -1722,7 +2045,7 @@ function renderSkimmerChartFailures() {
         .map((slot) => {
           if (slot.status === "qrx") {
             const wait = Math.ceil(Math.max(0, Number(slot.retryAfterMs) || 0) / 1000);
-            const text = wait ? `Rate limited, retry in ~${wait}s` : "Rate limited";
+            const text = wait ? `Rate limited, will auto retry in ~${wait}s` : "Rate limited, will auto retry.";
             return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${text}</p>`;
           }
           return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${escapeHtml(slot.error || "Failed")}</p>`;
@@ -1761,71 +2084,82 @@ function renderSkimmerAnalysisCharts() {
   const rankingBand = activeBands.size === 1 ? Array.from(activeBands)[0] : "";
   const ranking = getOrBuildRankingByP75(baseSlot, rankingBand, { minSamples: 1 });
   const callsignLegend = renderCallsignLegend(slots);
-  const cardsOrder = CONTINENT_ORDER.map((continent) => {
+
+  const mergedMap = new Map();
+  for (const continent of CONTINENT_ORDER) {
     const list = ranking?.byContinent.get(continent) || [];
-    return {
-      continent,
-      list,
-      topP75: Number.isFinite(list[0]?.p75) ? Number(list[0].p75) : Number.NEGATIVE_INFINITY,
-    };
-  }).sort((a, b) => {
-    if (b.topP75 !== a.topP75) return b.topP75 - a.topP75;
-    return continentSort(a.continent, b.continent);
+    for (const item of list) {
+      const spotter = String(item?.spotter || "");
+      if (!spotter) continue;
+      const count = Number(item?.count || 0);
+      const p75 = Number(item?.p75);
+      const prev = mergedMap.get(spotter);
+      if (!prev || count > prev.count) {
+        mergedMap.set(spotter, {
+          spotter,
+          count,
+          p75: Number.isFinite(p75) ? p75 : prev?.p75 ?? null,
+        });
+      }
+    }
+  }
+
+  const listByCount = Array.from(mergedMap.values()).sort((a, b) => {
+    const countDiff = Number(b?.count || 0) - Number(a?.count || 0);
+    if (countDiff !== 0) return countDiff;
+    return String(a?.spotter || "").localeCompare(String(b?.spotter || ""));
   });
 
-  const cardsHtml = cardsOrder
-    .map(({ continent, list }) => {
-      const saved = String(skimmerState.chart.selectedByContinent[continent] || "");
-      const selectedSpotter = saved && list.some((item) => item.spotter === saved) ? saved : list[0]?.spotter || "";
-      if (selectedSpotter) skimmerState.chart.selectedByContinent[continent] = selectedSpotter;
+  const key = "SCOPE";
+  const saved = String(skimmerState.chart.selectedByContinent[key] || "");
+  const selectedSpotter = saved && listByCount.some((item) => item.spotter === saved) ? saved : listByCount[0]?.spotter || "";
+  if (selectedSpotter) skimmerState.chart.selectedByContinent[key] = selectedSpotter;
 
-      const options = list.length
-        ? list
-            .slice(0, 80)
-            .map(
-              (item) =>
-                `<option value="${escapeHtml(item.spotter)}" ${item.spotter === selectedSpotter ? "selected" : ""}>` +
-                `${escapeHtml(item.spotter)} (P75 ${Number(item.p75).toFixed(1)} dB · ${formatNumber(item.count)})</option>`,
-            )
-            .join("")
-        : "<option value=''>No skimmers</option>";
+  const options = listByCount.length
+    ? listByCount
+        .slice(0, 200)
+        .map(
+          (item) =>
+            `<option value="${escapeHtml(item.spotter)}" ${item.spotter === selectedSpotter ? "selected" : ""}>` +
+            `${escapeHtml(item.spotter)} (${formatNumber(item.count)} spots${Number.isFinite(item.p75) ? ` · P75 ${Number(item.p75).toFixed(1)} dB` : ""})</option>`,
+        )
+        .join("")
+    : "<option value=''>No spotted stations</option>";
 
-      const statusText = list.length ? "" : `No RBN spots found for ${continentLabel(continent)}.`;
+  const statusText = listByCount.length ? "" : "No spotted stations found for the selected scope and time window.";
 
-      return `
-        <article class="rbn-signal-card">
-          <div class="rbn-signal-head">
-            <h4>${continentLabel(continent)} skimmer</h4>
-            <label class="rbn-signal-picker" aria-label="${continentLabel(continent)} skimmer selector">
-              <select class="rbn-signal-select" data-continent="${continent}" ${list.length ? "" : "disabled"}>
-                ${options}
-              </select>
-            </label>
-            <button type="button" class="rbn-copy-btn" title="Copy as image" aria-label="Copy as image">Copy as image</button>
-            <span class="rbn-signal-status" ${list.length ? "hidden" : ""}>${statusText}</span>
+  const cardsHtml = `
+    <article class="rbn-signal-card">
+      <div class="rbn-signal-head">
+        <h4>Target station</h4>
+        <label class="rbn-signal-picker" aria-label="Target station selector">
+          <select class="rbn-signal-select" data-continent="${key}" ${listByCount.length ? "" : "disabled"}>
+            ${options}
+          </select>
+        </label>
+        <button type="button" class="rbn-copy-btn" title="Copy as image" aria-label="Copy as image">Copy as image</button>
+        <span class="rbn-signal-status" ${listByCount.length ? "hidden" : ""}>${statusText}</span>
+      </div>
+      <div class="rbn-signal-body">
+        <div class="rbn-signal-plot">
+          <canvas class="rbn-signal-canvas" data-continent="SCOPE" data-scope-label="Selected scope" data-spotter="${escapeHtml(selectedSpotter)}" data-height="320"></canvas>
+          <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
+        </div>
+        <div class="rbn-signal-side">
+          <div class="rbn-signal-legend">
+            <h5>Bands (click to filter)</h5>
+            <span class="rbn-signal-legend-bands"></span>
           </div>
-          <div class="rbn-signal-body">
-            <div class="rbn-signal-plot">
-              <canvas class="rbn-signal-canvas" data-continent="${continent}" data-spotter="${escapeHtml(selectedSpotter)}" data-height="280"></canvas>
-              <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
-            </div>
-            <div class="rbn-signal-side">
-              <div class="rbn-signal-legend">
-                <h5>Bands (click to filter)</h5>
-                <span class="rbn-signal-legend-bands"></span>
-              </div>
-              <div class="rbn-signal-calls">
-                <h5>Callsigns</h5>
-                <div class="rbn-signal-calls-list">
-                  ${callsignLegend}
-                </div>
-              </div>
+          <div class="rbn-signal-calls">
+            <h5>SKIMMER CALLSIGNS</h5>
+            <div class="rbn-signal-calls-list">
+              ${callsignLegend}
             </div>
           </div>
-        </article>
-      `;
-    })
-    .join("");
+        </div>
+      </div>
+    </article>
+  `;
 
   ui.skimmerChartsRoot.classList.remove("empty-state");
   ui.skimmerChartsRoot.innerHTML = `
@@ -1914,6 +2248,7 @@ function refreshLiveFormState(options = {}) {
 }
 
 function handleLiveInput() {
+  clearLiveRetryCountdown();
   refreshLiveFormState();
 }
 
@@ -1943,6 +2278,7 @@ function syncLiveRefreshTimer() {
 
 function handleLiveReset() {
   queueMicrotask(() => {
+    clearLiveRetryCountdown();
     liveState.analysis = null;
     liveState.chart.selectedBands = [];
     liveState.chart.selectedByContinent = {};
@@ -1957,20 +2293,70 @@ function handleLiveReset() {
   });
 }
 
+function setSkimmerRangeLastHours(hoursInput) {
+  const hours = Math.max(1, Math.min(48, Number(hoursInput) || 6));
+  const now = Date.now();
+  const roundedNow = now - (now % (5 * 60 * 1000));
+  const fromTs = roundedNow - hours * 3600 * 1000;
+  const fromText = formatUtcTsToDateTimeDisplay(fromTs);
+  const toText = formatUtcTsToDateTimeDisplay(roundedNow);
+  if (ui.skimmerFrom) ui.skimmerFrom.value = fromText;
+  if (ui.skimmerTo) ui.skimmerTo.value = toText;
+  state.datePickers.skimmerFrom?.setDate(fromText, false, "d-m-Y H:i");
+  state.datePickers.skimmerTo?.setDate(toText, false, "d-m-Y H:i");
+}
+
+function applySkimmerPreset(presetKey) {
+  const key = String(presetKey || "").trim().toLowerCase();
+  if (!ui.skimmerAreaType || !ui.skimmerAreaValue) return;
+
+  if (key === "global_6h") {
+    ui.skimmerAreaType.value = "GLOBAL";
+    ui.skimmerAreaValue.value = "";
+    setSkimmerRangeLastHours(6);
+    return;
+  }
+
+  if (key === "eu_24h") {
+    ui.skimmerAreaType.value = "CONTINENT";
+    ui.skimmerAreaValue.value = "EU";
+    setSkimmerRangeLastHours(24);
+    return;
+  }
+
+  if (key === "dxcc_ja_12h") {
+    ui.skimmerAreaType.value = "DXCC";
+    ui.skimmerAreaValue.value = "JA";
+    setSkimmerRangeLastHours(12);
+  }
+}
+
+function focusSkimmerValidationSummary() {
+  if (!ui.skimmerValidationSummary || ui.skimmerValidationSummary.hidden) return;
+  ui.skimmerValidationSummary.focus({ preventScroll: false });
+}
+
 function refreshSkimmerFormState(options = {}) {
   const { silentStatus = false } = options;
   const model = collectSkimmerInputModel();
-  const validation = validateSkimmerInput(model);
-  syncSkimmerStateFromModel(model);
-  updateSkimmerFieldValidity(model);
 
   const needsValue = model.areaType !== "GLOBAL";
   if (ui.skimmerAreaValue) {
     ui.skimmerAreaValue.placeholder = skimmerAreaPlaceholder(model.areaType);
     ui.skimmerAreaValue.inputMode = model.areaType === "CQ" || model.areaType === "ITU" ? "numeric" : "text";
     ui.skimmerAreaValue.disabled = !needsValue;
-    if (!needsValue) ui.skimmerAreaValue.value = "";
+    if (!needsValue) {
+      ui.skimmerAreaValue.value = "";
+      model.areaValue = "";
+    }
   }
+  if (ui.skimmerHelpAreaValue) {
+    ui.skimmerHelpAreaValue.textContent = skimmerAreaValueHelpText(model.areaType);
+  }
+
+  const validation = validateSkimmerInput(model);
+  syncSkimmerStateFromModel(model);
+  updateSkimmerFieldValidity(model, { showFeedback: skimmerState.validation.showErrors });
 
   if (skimmerState.status === "running") {
     ui.skimmerStartButton.disabled = true;
@@ -1992,11 +2378,61 @@ function refreshSkimmerFormState(options = {}) {
 }
 
 function handleSkimmerInput() {
+  clearSkimmerRetryCountdown();
+  skimmerState.validation.showErrors = true;
   refreshSkimmerFormState();
+}
+
+function handleSkimmerQuickActionClick(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+
+  const hoursButton = target.closest("[data-skimmer-hours]");
+  if (hoursButton instanceof HTMLButtonElement) {
+    event.preventDefault();
+    skimmerState.validation.showErrors = true;
+    setSkimmerRangeLastHours(Number(hoursButton.dataset.skimmerHours || 6));
+    refreshSkimmerFormState();
+    return;
+  }
+
+  const presetButton = target.closest("[data-skimmer-preset]");
+  if (presetButton instanceof HTMLButtonElement) {
+    event.preventDefault();
+    skimmerState.validation.showErrors = true;
+    applySkimmerPreset(presetButton.dataset.skimmerPreset || "");
+    refreshSkimmerFormState();
+  }
+}
+
+function focusSkimmerField(fieldId) {
+  const map = {
+    skimmerFrom: ui.skimmerFrom,
+    skimmerTo: ui.skimmerTo,
+    skimmerAreaType: ui.skimmerAreaType,
+    skimmerAreaValue: ui.skimmerAreaValue,
+    skimmerCallPrimary: ui.skimmerCallPrimary,
+    skimmerCallCompare1: ui.skimmerCallCompare1,
+    skimmerCallCompare2: ui.skimmerCallCompare2,
+    skimmerCallCompare3: ui.skimmerCallCompare3,
+  };
+  const node = map[String(fieldId || "")];
+  if (!node) return;
+  node.focus({ preventScroll: false });
+}
+
+function handleSkimmerSummaryClick(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest("[data-focus-field]");
+  if (!(button instanceof HTMLButtonElement)) return;
+  event.preventDefault();
+  focusSkimmerField(button.dataset.focusField || "");
 }
 
 function handleSkimmerReset() {
   queueMicrotask(() => {
+    clearSkimmerRetryCountdown();
     state.datePickers.skimmerFrom?.clear();
     state.datePickers.skimmerTo?.clear();
     skimmerState.analysis = null;
@@ -2010,6 +2446,7 @@ function handleSkimmerReset() {
     if (ui.skimmerTo) ui.skimmerTo.value = formatUtcTsToDateTimeDisplay(roundedNow);
     if (ui.skimmerAreaType) ui.skimmerAreaType.value = "GLOBAL";
     if (ui.skimmerAreaValue) ui.skimmerAreaValue.value = "";
+    skimmerState.validation.showErrors = false;
     resetSkimmerLoadChecks();
     setSkimmerStatus("idle", "Enter required fields to enable skimmer comparison.");
     renderSkimmerAnalysisCharts();
@@ -2017,7 +2454,8 @@ function handleSkimmerReset() {
   });
 }
 
-async function runSkimmerAnalysis(model) {
+async function runSkimmerAnalysis(model, options = {}) {
+  const source = String(options.source || "manual");
   const runToken = skimmerState.activeRunToken + 1;
   skimmerState.activeRunToken = runToken;
   resetSkimmerLoadChecks();
@@ -2064,6 +2502,7 @@ async function runSkimmerAnalysis(model) {
     renderSkimmerAnalysisCharts();
 
     const loaded = result.slots.filter((slot) => slot.status === "ready").length;
+    const qrxSlots = result.slots.filter((slot) => slot.status === "qrx");
     const failed = result.slots.filter((slot) => slot.status === "error" || slot.status === "qrx").length;
     if (failed && loaded) {
       setSkimmerStatus("ready", `Skimmer comparison completed with partial results (${loaded} loaded, ${failed} failed).`);
@@ -2073,6 +2512,16 @@ async function runSkimmerAnalysis(model) {
       setSkimmerStatus("ready", "Skimmer comparison completed but no spots matched the selected filter.");
     } else {
       setSkimmerStatus("ready", `Skimmer comparison completed for ${loaded} callsign${loaded === 1 ? "" : "s"}.`);
+    }
+
+    if (qrxSlots.length && skimmerState.retry.attempts < skimmerState.retry.maxAttempts) {
+      const retryMs = Math.max(...qrxSlots.map((slot) => Number(slot.retryAfterMs) || 15000));
+      const baseMessage = `${qrxSlots.length} slot${qrxSlots.length === 1 ? "" : "s"} rate limited.`;
+      startSkimmerRetryCountdown(retryMs, model, baseMessage);
+    } else if (!qrxSlots.length) {
+      clearSkimmerRetryCountdown();
+    } else if (source !== "manual") {
+      setSkimmerStatus("error", "Skimmer auto-retry limit reached. Please retry manually.");
     }
   } catch (error) {
     if (runToken !== skimmerState.activeRunToken) return;
@@ -2122,6 +2571,7 @@ async function runLiveAnalysis(model, options = {}) {
     renderLiveAnalysisCharts();
 
     const loaded = result.slots.filter((slot) => slot.status === "ready").length;
+    const qrxSlots = result.slots.filter((slot) => slot.status === "qrx");
     const failed = result.slots.filter((slot) => slot.status === "error" || slot.status === "qrx").length;
     if (failed && loaded) {
       setLiveStatus("ready", `Live update completed with partial results (${loaded} loaded, ${failed} failed).`);
@@ -2142,6 +2592,16 @@ async function runLiveAnalysis(model, options = {}) {
     });
 
     liveState.refresh.lastModel = { ...model, comparisons: [...(model.comparisons || [])] };
+
+    if (qrxSlots.length && liveState.retry.attempts < liveState.retry.maxAttempts) {
+      const retryMs = Math.max(...qrxSlots.map((slot) => Number(slot.retryAfterMs) || 15000));
+      const baseMessage = `${qrxSlots.length} slot${qrxSlots.length === 1 ? "" : "s"} rate limited.`;
+      startLiveRetryCountdown(retryMs, model, baseMessage);
+    } else if (!qrxSlots.length) {
+      clearLiveRetryCountdown();
+    } else if (source !== "manual") {
+      setLiveStatus("error", "Live auto-retry limit reached. Please retry manually.");
+    }
   } catch (error) {
     if (runToken !== liveState.activeRunToken) return;
     if (ui.liveCheckFetch?.dataset.state === "loading") {
@@ -2176,6 +2636,8 @@ async function handleLiveSubmit(event) {
     setLiveStatus("error", validation.reason);
     return;
   }
+  clearLiveRetryCountdown();
+  liveState.retry.attempts = 0;
   trackCallsignEntryEvents(model);
   liveState.refresh.lastModel = { ...model, comparisons: [...(model.comparisons || [])] };
   await runLiveAnalysis(model, { source: "manual" });
@@ -2185,23 +2647,20 @@ async function handleSkimmerSubmit(event) {
   event.preventDefault();
   const { model, validation } = refreshSkimmerFormState({ silentStatus: true });
   if (!validation.ok) {
-    setSkimmerStatus("error", validation.reason);
+    skimmerState.validation.showErrors = true;
+    const refreshed = refreshSkimmerFormState({ silentStatus: true });
+    focusSkimmerValidationSummary();
+    setSkimmerStatus("error", refreshed.validation.reason);
     return;
   }
+  clearSkimmerRetryCountdown();
+  skimmerState.retry.attempts = 0;
   trackCallsignEntryEvents(model);
   await runSkimmerAnalysis(model);
 }
 
-async function handleSubmit(event) {
-  event.preventDefault();
-  clearRetryCountdown();
-  const { model, validation } = refreshFormState({ silentStatus: true });
-  if (!validation.ok) {
-    setStatus("error", validation.reason);
-    return;
-  }
-  trackCallsignEntryEvents(model);
-
+async function runHistoricalAnalysis(model, options = {}) {
+  const source = String(options.source || "manual");
   const runToken = state.activeRunToken + 1;
   state.activeRunToken = runToken;
   resetLoadChecks();
@@ -2252,7 +2711,19 @@ async function handleSubmit(event) {
       const baseMessage = loaded
         ? `Partial results shown. ${qrxSlots.length} slot${qrxSlots.length === 1 ? "" : "s"} rate limited.`
         : `Rate limited for ${qrxSlots.length} slot${qrxSlots.length === 1 ? "" : "s"}.`;
-      startRetryCountdown(retryMs, baseMessage, loaded ? "ready" : "error");
+      if (state.retry.attempts < state.retry.maxAttempts) {
+        startRetryCountdown(retryMs, baseMessage, loaded ? "ready" : "error", {
+          autoRetry: true,
+          trigger: async () => {
+            if (!state.retry.model) return;
+            await runHistoricalAnalysis(state.retry.model, { source: "auto_retry" });
+          },
+        });
+      } else if (source !== "manual") {
+        setStatus("error", "Historical auto-retry limit reached. Please retry manually.");
+      }
+    } else {
+      clearRetryCountdown();
     }
   } catch (error) {
     if (runToken !== state.activeRunToken) return;
@@ -2272,6 +2743,20 @@ async function handleSubmit(event) {
       }
     }
   }
+}
+
+async function handleSubmit(event) {
+  event.preventDefault();
+  const { model, validation } = refreshFormState({ silentStatus: true });
+  if (!validation.ok) {
+    setStatus("error", validation.reason);
+    return;
+  }
+  trackCallsignEntryEvents(model);
+  clearRetryCountdown();
+  state.retry.attempts = 0;
+  state.retry.model = { ...model, comparisons: [...(model.comparisons || [])] };
+  await runHistoricalAnalysis(model, { source: "manual" });
 }
 
 function handleLegendBandClick(event) {
@@ -2717,8 +3202,10 @@ function bindEvents() {
   ui.liveForm.addEventListener("reset", handleLiveReset);
   ui.skimmerForm.addEventListener("input", handleSkimmerInput);
   ui.skimmerAreaType.addEventListener("change", handleSkimmerInput);
+  ui.skimmerForm.addEventListener("click", handleSkimmerQuickActionClick);
   ui.skimmerForm.addEventListener("submit", handleSkimmerSubmit);
   ui.skimmerForm.addEventListener("reset", handleSkimmerReset);
+  ui.skimmerValidationList?.addEventListener("click", handleSkimmerSummaryClick);
   ui.chartsRoot.addEventListener("click", handleLegendBandClick);
   ui.chartsRoot.addEventListener("click", handleCopyCardClick);
   ui.liveChartsRoot.addEventListener("click", handleLegendBandClick);

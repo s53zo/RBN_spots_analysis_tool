@@ -313,127 +313,162 @@
         <section class="panel input-panel" aria-labelledby="skimmer-setup-heading">
           <div class="panel-head">
             <h2 id="skimmer-setup-heading">Skimmer Setup</h2>
+            <p class="panel-note">How well do different skimmers receive a certain station?</p>
+            <p class="panel-note">Guided flow for DXers and contesters. Fill top to bottom.</p>
           </div>
           <form id="skimmer-analysis-form" novalidate>
-            <div class="field-grid setup-row">
-              <div class="field field-datetime">
-                <label for="skimmer-from">UTC from (DD-MM-YYYY HH:MM) <span class="req">*</span></label>
-                <input
-                  id="skimmer-from"
-                  name="skimmerFrom"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  placeholder="DD-MM-YYYY HH:MM"
-                  required
-                />
-              </div>
-              <div class="field field-datetime">
-                <label for="skimmer-to">UTC to (DD-MM-YYYY HH:MM) <span class="req">*</span></label>
-                <input
-                  id="skimmer-to"
-                  name="skimmerTo"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  placeholder="DD-MM-YYYY HH:MM"
-                  required
-                />
-              </div>
-              <div class="field">
-                <label for="skimmer-area-type">Skimmer area type</label>
-                <select id="skimmer-area-type" name="skimmerAreaType" class="live-window-select">
-                  <option value="GLOBAL" selected>Global</option>
-                  <option value="CONTINENT">Continent</option>
-                  <option value="DXCC">DXCC</option>
-                  <option value="CQ">CQ zone</option>
-                  <option value="ITU">ITU zone</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="skimmer-area-value">Skimmer area value</label>
-                <input
-                  id="skimmer-area-value"
-                  name="skimmerAreaValue"
-                  type="text"
-                  inputmode="text"
-                  autocomplete="off"
-                  placeholder="EU, Slovenia, 14"
-                />
-              </div>
-              <div class="field">
-                <label for="skimmer-call-primary">Primary callsign <span class="req">*</span></label>
-                <input
-                  id="skimmer-call-primary"
-                  name="skimmerCallPrimary"
-                  type="text"
-                  maxlength="20"
-                  inputmode="text"
-                  autocomplete="off"
-                  placeholder="S53ZO"
-                  required
-                />
-              </div>
-              <div class="field">
-                <label for="skimmer-call-compare-1">Compare callsign 1</label>
-                <input
-                  id="skimmer-call-compare-1"
-                  name="skimmerCallCompare1"
-                  type="text"
-                  maxlength="20"
-                  inputmode="text"
-                  autocomplete="off"
-                  placeholder="K1ABC"
-                />
-              </div>
-              <div class="field">
-                <label for="skimmer-call-compare-2">Compare callsign 2</label>
-                <input
-                  id="skimmer-call-compare-2"
-                  name="skimmerCallCompare2"
-                  type="text"
-                  maxlength="20"
-                  inputmode="text"
-                  autocomplete="off"
-                  placeholder="DL1XYZ"
-                />
-              </div>
-              <div class="field">
-                <label for="skimmer-call-compare-3">Compare callsign 3</label>
-                <input
-                  id="skimmer-call-compare-3"
-                  name="skimmerCallCompare3"
-                  type="text"
-                  maxlength="20"
-                  inputmode="text"
-                  autocomplete="off"
-                  placeholder="JA1AAA"
-                />
-              </div>
-              <div class="field field-actions">
-                <label for="start-skimmer-analysis">Run</label>
-                <div class="actions-row">
-                  <button id="start-skimmer-analysis" class="btn-primary" type="submit" disabled>Start skimmer analysis</button>
-                  <button id="reset-skimmer-analysis" class="btn-ghost" type="reset">Reset</button>
+            <div id="skimmer-validation-summary" class="skimmer-validation-summary" hidden tabindex="-1">
+              <p>Fix the following before running:</p>
+              <ul id="skimmer-validation-list"></ul>
+            </div>
+
+            <section class="skimmer-step" aria-labelledby="skimmer-step-calls">
+              <h3 id="skimmer-step-calls"><span>Step 1</span> Callsigns</h3>
+              <p class="skimmer-step-note">Primary is required. Add up to 3 comparison callsigns.</p>
+              <div class="field-grid setup-row">
+                <div class="field">
+                  <label for="skimmer-call-primary">Skimmer callsign 1 <span class="req">*</span></label>
+                  <input
+                    id="skimmer-call-primary"
+                    name="skimmerCallPrimary"
+                    type="text"
+                    maxlength="20"
+                    inputmode="text"
+                    autocomplete="off"
+                    placeholder="S53ZO"
+                    required
+                  />
+                  <p id="skimmer-help-call-primary" class="field-help"></p>
+                  <p id="skimmer-error-call-primary" class="field-error" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="skimmer-call-compare-1">Skimmer callsign 2</label>
+                  <input
+                    id="skimmer-call-compare-1"
+                    name="skimmerCallCompare1"
+                    type="text"
+                    maxlength="20"
+                    inputmode="text"
+                    autocomplete="off"
+                    placeholder="K1ABC"
+                  />
+                  <p id="skimmer-help-call-compare-1" class="field-help"></p>
+                  <p id="skimmer-error-call-compare-1" class="field-error" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="skimmer-call-compare-2">Skimmer callsign 3</label>
+                  <input
+                    id="skimmer-call-compare-2"
+                    name="skimmerCallCompare2"
+                    type="text"
+                    maxlength="20"
+                    inputmode="text"
+                    autocomplete="off"
+                    placeholder="DL1XYZ"
+                  />
+                  <p id="skimmer-help-call-compare-2" class="field-help"></p>
+                  <p id="skimmer-error-call-compare-2" class="field-error" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="skimmer-call-compare-3">Skimmer callsign 4</label>
+                  <input
+                    id="skimmer-call-compare-3"
+                    name="skimmerCallCompare3"
+                    type="text"
+                    maxlength="20"
+                    inputmode="text"
+                    autocomplete="off"
+                    placeholder="JA1AAA"
+                  />
+                  <p id="skimmer-help-call-compare-3" class="field-help"></p>
+                  <p id="skimmer-error-call-compare-3" class="field-error" hidden></p>
                 </div>
               </div>
-            </div>
+            </section>
+
+            <section class="skimmer-step" aria-labelledby="skimmer-step-time">
+              <h3 id="skimmer-step-time"><span>Step 2</span> UTC Time Window</h3>
+              <p class="skimmer-step-note"></p>
+              <div class="skimmer-quick-range" role="group" aria-label="Quick UTC ranges">
+                <button type="button" class="btn-chip" data-skimmer-hours="1">Last 1h</button>
+                <button type="button" class="btn-chip" data-skimmer-hours="6">Last 6h</button>
+                <button type="button" class="btn-chip" data-skimmer-hours="12">Last 12h</button>
+                <button type="button" class="btn-chip" data-skimmer-hours="24">Last 24h</button>
+                <button type="button" class="btn-chip" data-skimmer-hours="48">Last 48h</button>
+              </div>
+              <div class="field-grid setup-row">
+                <div class="field field-datetime">
+                  <label for="skimmer-from">UTC from (DD-MM-YYYY HH:MM) <span class="req">*</span></label>
+                  <input
+                    id="skimmer-from"
+                    name="skimmerFrom"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    placeholder="DD-MM-YYYY HH:MM"
+                    required
+                  />
+                  <p id="skimmer-help-from" class="field-help">Start of analysis window in UTC.</p>
+                  <p id="skimmer-error-from" class="field-error" hidden></p>
+                </div>
+                <div class="field field-datetime">
+                  <label for="skimmer-to">UTC to (DD-MM-YYYY HH:MM) <span class="req">*</span></label>
+                  <input
+                    id="skimmer-to"
+                    name="skimmerTo"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    placeholder="DD-MM-YYYY HH:MM"
+                    required
+                  />
+                  <p id="skimmer-help-to" class="field-help">End of analysis window in UTC.</p>
+                  <p id="skimmer-error-to" class="field-error" hidden></p>
+                </div>
+              </div>
+            </section>
+
+            <section class="skimmer-step" aria-labelledby="skimmer-step-scope">
+              <h3 id="skimmer-step-scope"><span>Step 3</span> Skimmer Scope</h3>
+              <p class="skimmer-step-note">Global is default. For targeted analysis, most users choose DXCC. - for example put S5 as DXCC to compare how skimmers from above receive S5 stations. Global means compare the whole world</p>
+              <div class="field-grid setup-row">
+                <div class="field">
+                  <label for="skimmer-area-type">Skimmer scope type</label>
+                  <select id="skimmer-area-type" name="skimmerAreaType" class="live-window-select">
+                    <option value="GLOBAL" selected>Global</option>
+                    <option value="DXCC">DXCC (recommended for targeted checks)</option>
+                    <option value="CONTINENT">Continent</option>
+                    <option value="CQ">CQ zone</option>
+                    <option value="ITU">ITU zone</option>
+                  </select>
+                  <p id="skimmer-help-area-type" class="field-help">Choose how to filter skimmer stations.</p>
+                  <p id="skimmer-error-area-type" class="field-error" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="skimmer-area-value">Scope value</label>
+                  <input
+                    id="skimmer-area-value"
+                    name="skimmerAreaValue"
+                    type="text"
+                    inputmode="text"
+                    autocomplete="off"
+                    placeholder="Not required for Global"
+                  />
+                  <p id="skimmer-help-area-value" class="field-help">DXCC examples: JA, DL, W, or country name.</p>
+                  <p id="skimmer-error-area-value" class="field-error" hidden></p>
+                </div>
+              </div>
+            </section>
+
+            <section class="skimmer-step skimmer-step-run" aria-labelledby="skimmer-step-run">
+              <h3 id="skimmer-step-run"><span>Step 4</span> Run</h3>
+              <p class="skimmer-step-note">When fields are valid, start skimmer comparison.</p>
+              <div class="actions-row">
+                <button id="start-skimmer-analysis" class="btn-primary" type="submit" disabled>Start skimmer analysis</button>
+                <button id="reset-skimmer-analysis" class="btn-ghost" type="reset">Reset</button>
+              </div>
+            </section>
           </form>
-          <div class="live-status-shell" aria-live="polite">
-            <div id="skimmer-status-pill" class="status-pill" data-state="ready">Ready</div>
-            <p id="skimmer-status-message" class="status-message" hidden></p>
-            <div class="hero-checks" aria-label="Skimmer comparison data loading progress">
-              <span id="skimmer-check-fetch" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>RBN data</span
-              >
-              <span id="skimmer-check-cty" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>cty.dat</span
-              >
-              <span id="skimmer-check-charts" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>Charts</span
-              >
-            </div>
-          </div>
         </section>
 
         <section class="panel charts-panel" aria-labelledby="skimmer-charts-heading">
