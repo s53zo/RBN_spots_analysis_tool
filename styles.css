@@ -122,6 +122,13 @@ p {
 
 .hero-status .hero-checks {
   margin-left: 0;
+  flex-wrap: nowrap;
+  gap: 0.28rem;
+  flex: 0 0 auto;
+}
+
+.hero-status .status-pill {
+  flex: 0 0 auto;
 }
 
 .hero-check {
@@ -162,12 +169,19 @@ p {
 }
 
 .hero-status {
-  display: grid;
-  align-content: center;
-  justify-items: start;
-  gap: 0.35rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  overflow-x: auto;
   border-top: 1px dashed #cad7e9;
   padding-top: 0.5rem;
+  padding-bottom: 0.12rem;
+}
+
+.hero-status .status-message {
+  flex: 1 1 100%;
+  margin-top: 0.08rem;
 }
 
 .panel {
@@ -535,6 +549,8 @@ button {
     border-left: 1px dashed #cad7e9;
     padding-top: 0;
     padding-left: 0.75rem;
+    padding-bottom: 0;
+    overflow: visible;
   }
 }
 
