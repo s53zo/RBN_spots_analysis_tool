@@ -312,10 +312,12 @@ const validateModel = validateAnalysisInput;
 
 function setStatus(status, message) {
   state.status = status;
-  ui.statusPill.dataset.state = status;
-  ui.statusPill.textContent =
-    status === "ready" ? "Ready" : status === "running" ? "Running" : status === "error" ? "Error" : "Idle";
-  ui.statusMessage.textContent = message;
+  const visualStatus = status === "idle" ? "ready" : status;
+  ui.statusPill.dataset.state = visualStatus;
+  ui.statusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
+  const showMessage = status !== "idle" && Boolean(message);
+  ui.statusMessage.hidden = !showMessage;
+  ui.statusMessage.textContent = showMessage ? message : "";
 }
 
 function setStartButtonMode(mode) {
@@ -326,10 +328,12 @@ function setStartButtonMode(mode) {
 function setLiveStatus(status, message) {
   liveState.status = status;
   if (!ui.liveStatusPill || !ui.liveStatusMessage) return;
-  ui.liveStatusPill.dataset.state = status;
-  ui.liveStatusPill.textContent =
-    status === "ready" ? "Ready" : status === "running" ? "Running" : status === "error" ? "Error" : "Idle";
-  ui.liveStatusMessage.textContent = message;
+  const visualStatus = status === "idle" ? "ready" : status;
+  ui.liveStatusPill.dataset.state = visualStatus;
+  ui.liveStatusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
+  const showMessage = status !== "idle" && Boolean(message);
+  ui.liveStatusMessage.hidden = !showMessage;
+  ui.liveStatusMessage.textContent = showMessage ? message : "";
 }
 
 function setLiveStartButtonMode(mode) {
