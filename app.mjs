@@ -1,5 +1,6 @@
 import { runRbnAnalysis, runRbnLiveAnalysis, runRbnSkimmerComparison } from "./src/rbn-orchestrator.mjs";
-import { normalizeBandToken, normalizeCall } from "./src/rbn-normalize.mjs";
+import { normalizeBandToken, normalizeCall, normalizeRbnSpot } from "./src/rbn-normalize.mjs";
+import { fetchRbnSpots } from "./src/rbn-api.mjs";
 import {
   CALLSIGN_PATTERN,
   LIVE_WINDOW_OPTIONS,
@@ -10,7 +11,7 @@ import {
   validateLiveInput,
   validateSkimmerInput,
 } from "./src/input-validation.mjs";
-import { preloadCtyData, resolveDxccFromInput } from "./src/cty-lookup.mjs";
+import { getCallGeoMeta, preloadCtyData, resolveDxccFromInput } from "./src/cty-lookup.mjs";
 import {
   CONTINENT_ORDER,
   continentLabel,
@@ -128,6 +129,13 @@ const skimmerState = {
   validation: {
     showErrors: false,
   },
+  peerSuggestions: {
+    requestToken: 0,
+    sourceTarget: "",
+    loading: false,
+    error: "",
+    items: [],
+  },
 };
 
 const ui = {
@@ -195,6 +203,9 @@ const ui = {
   skimmerErrorCallCompare1: document.querySelector("#skimmer-error-call-compare-1"),
   skimmerErrorCallCompare2: document.querySelector("#skimmer-error-call-compare-2"),
   skimmerErrorCallCompare3: document.querySelector("#skimmer-error-call-compare-3"),
+  skimmerSuggestions: document.querySelector("#skimmer-peer-suggestions"),
+  skimmerSuggestionsMeta: document.querySelector("#skimmer-peer-suggestions-meta"),
+  skimmerSuggestionsList: document.querySelector("#skimmer-peer-suggestions-list"),
 };
 
 let html2CanvasLoadPromise = null;
@@ -203,6 +214,12 @@ const CHART_PLOT_MARGIN = Object.freeze({ left: 52, right: 12, top: 16, bottom: 
 const MIN_ZOOM_DRAG_PX = 8;
 const MIN_ZOOM_WINDOW_MS = 60 * 1000;
 const PERMALINK_VERSION = "v2";
+const SKIMMER_PEER_GROUPS = Object.freeze([
+  { id: "dxcc", label: "Same DXCC" },
+  { id: "cq", label: "Same CQ zone" },
+  { id: "itu", label: "Same ITU zone" },
+  { id: "continent", label: "Same Continent" },
+]);
 
 function setActiveChapter(chapter) {
   const normalized = chapter === "live" || chapter === "skimmer" ? chapter : "historical";
@@ -2932,6 +2949,7 @@ function refreshSkimmerFormState(options = {}) {
 
 function handleSkimmerInput() {
   clearSkimmerRetryCountdown();
+  resetSkimmerPeerSuggestions();
   skimmerState.validation.showErrors = true;
   refreshSkimmerFormState();
 }
@@ -2955,6 +2973,28 @@ function handleSkimmerQuickActionClick(event) {
     skimmerState.validation.showErrors = true;
     applySkimmerPreset(presetButton.dataset.skimmerPreset || "");
     refreshSkimmerFormState();
+    return;
+  }
+
+  const suggestButton = target.closest("[data-skimmer-suggest-call]");
+  if (suggestButton instanceof HTMLButtonElement) {
+    event.preventDefault();
+    const call = normalizeCall(suggestButton.dataset.skimmerSuggestCall || "");
+    if (!call) return;
+    const nextField = getNextEmptySkimmerCompareInput();
+    if (nextField) {
+      nextField.value = call;
+      skimmerState.validation.showErrors = true;
+      refreshSkimmerFormState();
+      markPermalinkButtonResult(suggestButton, "Added");
+      return;
+    }
+    if (ui.skimmerCallCompare3) {
+      ui.skimmerCallCompare3.value = call;
+      skimmerState.validation.showErrors = true;
+      refreshSkimmerFormState();
+      markPermalinkButtonResult(suggestButton, "Replaced #4");
+    }
   }
 }
 
@@ -2974,6 +3014,211 @@ function focusSkimmerField(fieldId) {
   node.focus({ preventScroll: false });
 }
 
+function resetSkimmerPeerSuggestions() {
+  skimmerState.peerSuggestions.requestToken += 1;
+  skimmerState.peerSuggestions.sourceTarget = "";
+  skimmerState.peerSuggestions.loading = false;
+  skimmerState.peerSuggestions.error = "";
+  skimmerState.peerSuggestions.items = [];
+  renderSkimmerPeerSuggestions();
+}
+
+function renderSkimmerPeerSuggestions() {
+  if (!ui.skimmerSuggestions || !ui.skimmerSuggestionsMeta || !ui.skimmerSuggestionsList) return;
+  const model = skimmerState.peerSuggestions;
+  const hasItems = Array.isArray(model.items) && model.items.length > 0;
+  const hasError = Boolean(model.error);
+  const isLoading = Boolean(model.loading);
+  ui.skimmerSuggestions.hidden = !(isLoading || hasError || hasItems);
+
+  if (isLoading) {
+    ui.skimmerSuggestionsMeta.textContent = "Finding peer skimmers...";
+  } else if (hasError) {
+    ui.skimmerSuggestionsMeta.textContent = model.error;
+  } else if (hasItems) {
+    ui.skimmerSuggestionsMeta.textContent = "Suggested peers.";
+  } else {
+    ui.skimmerSuggestionsMeta.textContent = "";
+  }
+
+  if (!hasItems) {
+    ui.skimmerSuggestionsList.innerHTML = "";
+    return;
+  }
+
+  ui.skimmerSuggestionsList.innerHTML = model.items
+    .map((item) => {
+      const zoneBits = [];
+      if (item.dxcc) zoneBits.push(`DXCC ${escapeHtml(item.dxcc)}`);
+      if (Number.isInteger(item.cqZone)) zoneBits.push(`CQ ${item.cqZone}`);
+      if (Number.isInteger(item.ituZone)) zoneBits.push(`ITU ${item.ituZone}`);
+      if (item.continent) zoneBits.push(escapeHtml(item.continent));
+      const zoneText = zoneBits.length ? zoneBits.join(" · ") : "No geo details";
+      return `
+        <article class="skimmer-suggestion-card" aria-label="${escapeHtml(item.groupLabel)} candidate ${escapeHtml(item.call)}">
+          <div class="skimmer-suggestion-head">
+            <span class="skimmer-suggestion-group">${escapeHtml(item.groupLabel)}</span>
+            <strong class="skimmer-suggestion-call">${escapeHtml(item.call)}</strong>
+          </div>
+          <p class="skimmer-suggestion-meta">${formatNumber(item.count)} spots · ${zoneText}</p>
+          <button
+            type="button"
+            class="btn-chip btn-chip-strong skimmer-suggestion-btn"
+            data-skimmer-suggest-call="${escapeHtml(item.call)}"
+            title="Add ${escapeHtml(item.call)} to comparison callsigns"
+          >
+            Add as compare
+          </button>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function pickBestTargetFromSlot(slot) {
+  const spots = Array.isArray(slot?.raw?.ofUsSpots) ? slot.raw.ofUsSpots : [];
+  const counts = new Map();
+  for (const rawSpot of spots) {
+    const spot = normalizeRbnSpot(rawSpot);
+    const target = normalizeCall(spot?.spotter || "");
+    if (!target) continue;
+    counts.set(target, (counts.get(target) || 0) + 1);
+  }
+  let bestCall = "";
+  let bestCount = 0;
+  for (const [call, count] of counts.entries()) {
+    if (count > bestCount) {
+      bestCall = call;
+      bestCount = count;
+    }
+  }
+  return { call: bestCall, count: bestCount };
+}
+
+function getNextEmptySkimmerCompareInput() {
+  const fields = [ui.skimmerCallCompare1, ui.skimmerCallCompare2, ui.skimmerCallCompare3];
+  for (const field of fields) {
+    const value = normalizeCall(field?.value || "");
+    if (!value) return field || null;
+  }
+  return null;
+}
+
+function buildSkimmerPeerGroupMatches(primaryGeo, candidateGeo) {
+  const matches = [];
+  if (primaryGeo.dxcc && candidateGeo.dxcc && primaryGeo.dxcc === candidateGeo.dxcc) matches.push("dxcc");
+  if (Number.isInteger(primaryGeo.cqZone) && Number.isInteger(candidateGeo.cqZone) && primaryGeo.cqZone === candidateGeo.cqZone) {
+    matches.push("cq");
+  }
+  if (Number.isInteger(primaryGeo.ituZone) && Number.isInteger(candidateGeo.ituZone) && primaryGeo.ituZone === candidateGeo.ituZone) {
+    matches.push("itu");
+  }
+  if (primaryGeo.continent && candidateGeo.continent && primaryGeo.continent === candidateGeo.continent) matches.push("continent");
+  return matches;
+}
+
+async function discoverSkimmerPeerSuggestions(result, model) {
+  const token = skimmerState.peerSuggestions.requestToken + 1;
+  skimmerState.peerSuggestions.requestToken = token;
+  skimmerState.peerSuggestions.loading = true;
+  skimmerState.peerSuggestions.error = "";
+  skimmerState.peerSuggestions.items = [];
+  skimmerState.peerSuggestions.sourceTarget = "";
+  renderSkimmerPeerSuggestions();
+
+  try {
+    const primaryCall = normalizeCall(model?.primary || "");
+    const primarySlot = (result?.slots || []).find((slot) => slot.id === "A" && slot.status === "ready");
+    if (!primaryCall || !primarySlot) {
+      throw new Error("Peer suggestions unavailable: missing primary skimmer data.");
+    }
+
+    const topTarget = pickBestTargetFromSlot(primarySlot);
+    if (!topTarget.call) {
+      throw new Error("Peer suggestions unavailable: no spotted target to pivot on.");
+    }
+
+    const days = Array.isArray(result?.days) ? result.days : [];
+    const raw = await fetchRbnSpots(topTarget.call, days);
+    if (token !== skimmerState.peerSuggestions.requestToken) return;
+    const fromTs = Number(result?.fromTs);
+    const toTs = Number(result?.toTs);
+
+    const primaryGeo = getCallGeoMeta(primaryCall, { strict: true });
+    const hasAnyGeo =
+      Boolean(primaryGeo?.dxcc) || Number.isInteger(primaryGeo?.cqZone) || Number.isInteger(primaryGeo?.ituZone) || Boolean(primaryGeo?.continent);
+    if (!hasAnyGeo) {
+      throw new Error(`Peer suggestions unavailable: could not resolve geography for ${primaryCall}.`);
+    }
+
+    const selectedCalls = new Set([
+      normalizeCall(model?.primary || ""),
+      ...((Array.isArray(model?.comparisons) ? model.comparisons : []).map((value) => normalizeCall(value || ""))),
+    ]);
+
+    const counts = new Map();
+    const spots = Array.isArray(raw?.ofUsSpots) ? raw.ofUsSpots : [];
+    for (const rawSpot of spots) {
+      const spot = normalizeRbnSpot(rawSpot);
+      if (!spot) continue;
+      if (Number.isFinite(fromTs) && spot.ts < fromTs) continue;
+      if (Number.isFinite(toTs) && spot.ts > toTs) continue;
+      const candidate = normalizeCall(spot.spotter);
+      if (!candidate || selectedCalls.has(candidate)) continue;
+      counts.set(candidate, (counts.get(candidate) || 0) + 1);
+    }
+
+    const ranked = Array.from(counts.entries())
+      .map(([call, count]) => {
+        const geo = getCallGeoMeta(call, { strict: true });
+        return {
+          call,
+          count,
+          dxcc: String(geo?.dxcc || "").trim(),
+          cqZone: Number.isInteger(geo?.cqZone) ? Number(geo.cqZone) : null,
+          ituZone: Number.isInteger(geo?.ituZone) ? Number(geo.ituZone) : null,
+          continent: String(geo?.continent || "").trim(),
+          groups: buildSkimmerPeerGroupMatches(primaryGeo, geo || {}),
+        };
+      })
+      .filter((row) => row.groups.length > 0)
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return a.call.localeCompare(b.call);
+      });
+
+    const usedCalls = new Set();
+    const picked = [];
+    for (const group of SKIMMER_PEER_GROUPS) {
+      const match = ranked.find((row) => row.groups.includes(group.id) && !usedCalls.has(row.call));
+      if (!match) continue;
+      usedCalls.add(match.call);
+      picked.push({
+        ...match,
+        groupId: group.id,
+        groupLabel: group.label,
+      });
+    }
+
+    if (!picked.length) {
+      throw new Error("No peer skimmers found in matching DXCC/CQ/ITU/continent groups.");
+    }
+
+    skimmerState.peerSuggestions.loading = false;
+    skimmerState.peerSuggestions.error = "";
+    skimmerState.peerSuggestions.sourceTarget = topTarget.call;
+    skimmerState.peerSuggestions.items = picked;
+    renderSkimmerPeerSuggestions();
+  } catch (error) {
+    if (token !== skimmerState.peerSuggestions.requestToken) return;
+    skimmerState.peerSuggestions.loading = false;
+    skimmerState.peerSuggestions.items = [];
+    skimmerState.peerSuggestions.sourceTarget = "";
+    skimmerState.peerSuggestions.error = error?.message || "Unable to find peer skimmers.";
+    renderSkimmerPeerSuggestions();
+  }
+}
+
 function handleSkimmerSummaryClick(event) {
   const target = event.target;
   if (!(target instanceof Element)) return;
@@ -2986,6 +3231,7 @@ function handleSkimmerSummaryClick(event) {
 function handleSkimmerReset() {
   queueMicrotask(() => {
     clearSkimmerRetryCountdown();
+    resetSkimmerPeerSuggestions();
     state.datePickers.skimmerFrom?.clear();
     state.datePickers.skimmerTo?.clear();
     skimmerState.analysis = null;
@@ -3070,6 +3316,12 @@ async function runSkimmerAnalysis(model, options = {}) {
       setSkimmerStatus("ready", "Skimmer comparison completed but no spots matched the selected filter.");
     } else {
       setSkimmerStatus("ready", `Skimmer comparison completed for ${loaded} callsign${loaded === 1 ? "" : "s"}.`);
+    }
+
+    if (loaded > 0) {
+      void discoverSkimmerPeerSuggestions(result, effectiveModel);
+    } else {
+      resetSkimmerPeerSuggestions();
     }
 
     if (qrxSlots.length && skimmerState.retry.attempts < skimmerState.retry.maxAttempts) {
@@ -3213,6 +3465,7 @@ async function handleSkimmerSubmit(event) {
     return;
   }
   clearSkimmerRetryCountdown();
+  resetSkimmerPeerSuggestions();
   skimmerState.retry.attempts = 0;
   skimmerState.chart.zoomByContinent = {};
   trackCallsignEntryEvents(model);
