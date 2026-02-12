@@ -520,7 +520,7 @@ select[aria-invalid="true"] {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .skimmer-suggestion-group {
@@ -538,9 +538,11 @@ select[aria-invalid="true"] {
 }
 
 .skimmer-suggestion-call {
-  font-size: 0.9rem;
-  color: #0f355f;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #0b2f55;
   letter-spacing: 0.01em;
+  line-height: 1.05;
 }
 
 .skimmer-suggestion-meta {
