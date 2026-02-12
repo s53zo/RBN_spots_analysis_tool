@@ -278,6 +278,10 @@ p {
   gap: 0.35rem;
 }
 
+.live-status-shell .hero-checks {
+  margin-left: 0;
+}
+
 #analysis-form {
   display: grid;
   gap: 0.6rem;

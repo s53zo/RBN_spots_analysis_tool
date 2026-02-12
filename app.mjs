@@ -381,6 +381,14 @@ function collectSkimmerInputModel() {
   };
 }
 
+function skimmerAreaPlaceholder(areaType) {
+  if (areaType === "CONTINENT") return "NA, SA, EU, AF, AS, OC";
+  if (areaType === "DXCC") return "e.g. Slovenia";
+  if (areaType === "CQ") return "e.g. 14";
+  if (areaType === "ITU") return "e.g. 28";
+  return "Not required for Global";
+}
+
 function addUtcDay(isoDate, daysToAdd = 1) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(isoDate || ""))) return "";
   const date = new Date(`${isoDate}T00:00:00Z`);
@@ -1554,7 +1562,7 @@ function renderSkimmerAnalysisCharts() {
   const activeBands = getSkimmerActiveBandFilterSet();
   skimmerState.chart.selectedBands = sortBands(Array.from(activeBands));
   const rankingBand = activeBands.size === 1 ? Array.from(activeBands)[0] : "";
-  const ranking = getOrBuildRankingByP75(baseSlot, rankingBand, { minSamples: 5 });
+  const ranking = getOrBuildRankingByP75(baseSlot, rankingBand, { minSamples: 1 });
   const callsignLegend = renderCallsignLegend(slots);
   const cardsOrder = CONTINENT_ORDER.map((continent) => {
     const list = ranking?.byContinent.get(continent) || [];
@@ -1758,6 +1766,8 @@ function refreshSkimmerFormState(options = {}) {
 
   const needsValue = model.areaType !== "GLOBAL";
   if (ui.skimmerAreaValue) {
+    ui.skimmerAreaValue.placeholder = skimmerAreaPlaceholder(model.areaType);
+    ui.skimmerAreaValue.inputMode = model.areaType === "CQ" || model.areaType === "ITU" ? "numeric" : "text";
     ui.skimmerAreaValue.disabled = !needsValue;
     if (!needsValue) ui.skimmerAreaValue.value = "";
   }
