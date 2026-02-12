@@ -95,7 +95,8 @@ function normalizeBandToken(raw) {
     return band || String(num).toUpperCase();
   }
 
-  return cleaned.toUpperCase();
+  const safe = cleaned.toUpperCase().replace(/[^A-Z0-9./-]/g, "");
+  return safe;
 }
 
 function formatRbnComment(spot) {

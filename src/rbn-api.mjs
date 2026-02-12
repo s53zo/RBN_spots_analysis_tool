@@ -1,4 +1,5 @@
 const RBN_PROXY_URL = "https://azure.s53m.com/cors/rbn";
+const RBN_FETCH_TIMEOUT_MS = 15000;
 
 function buildRateLimitError(response) {
   const retryAfter = String(response.headers.get("retry-after") || "").trim();
@@ -31,13 +32,31 @@ async function parseErrorMessage(response) {
   }
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = RBN_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || RBN_FETCH_TIMEOUT_MS));
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchRbnSpots(call, days) {
   const params = new URLSearchParams();
   if (call) params.set("call", call);
   if (Array.isArray(days) && days.length) params.set("days", days.join(","));
   const url = `${RBN_PROXY_URL}?${params.toString()}`;
 
-  const response = await fetch(url, { cache: "no-store" });
+  let response;
+  try {
+    response = await fetchWithTimeout(url, { cache: "no-store" });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("RBN request timed out. Please try again.");
+    }
+    throw error;
+  }
 
   if (response.status === 429) {
     throw buildRateLimitError(response);

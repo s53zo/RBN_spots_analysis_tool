@@ -3,9 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://azure.s53m.com https://www.google-analytics.com https://region1.google-analytics.com;"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>RBN Signal Analysis</title>
     <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-5GZP4X3VVH"></script>
+    <script
+      async
+      src="https://www.googletagmanager.com/gtag/js?id=G-5GZP4X3VVH"
+      crossorigin="anonymous"
+      referrerpolicy="strict-origin-when-cross-origin"
+    ></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag() {
@@ -21,7 +31,12 @@
       href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
+      crossorigin="anonymous"
+      referrerpolicy="strict-origin-when-cross-origin"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -433,7 +448,11 @@
       </section>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/flatpickr"
+      crossorigin="anonymous"
+      referrerpolicy="strict-origin-when-cross-origin"
+    ></script>
     <script type="module">
       import(`./app.mjs?v=${Date.now()}`);
     </script>

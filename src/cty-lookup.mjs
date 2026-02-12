@@ -10,6 +10,7 @@ const CTY_URLS = [
   "./CTY.DAT",
   "/CTY.DAT",
 ];
+const CTY_FETCH_TIMEOUT_MS = 12000;
 
 let ctyTable = null;
 let loadPromise = null;
@@ -218,7 +219,19 @@ function getCallGeoMeta(call, options = {}) {
 }
 
 async function fetchText(url) {
-  const response = await fetch(url, { cache: "no-store" });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CTY_FETCH_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(url, { cache: "no-store", signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Timeout while loading ${url}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.text();
 }

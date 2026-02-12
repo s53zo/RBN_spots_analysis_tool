@@ -383,6 +383,12 @@ select:focus-visible {
   outline-offset: 0.11rem;
 }
 
+input[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: var(--error);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--error) 45%, transparent);
+}
+
 .flatpickr-calendar .flatpickr-weekday:nth-child(6),
 .flatpickr-calendar .flatpickr-weekday:nth-child(7) {
   color: #2c3d57;

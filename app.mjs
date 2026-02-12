@@ -1,6 +1,15 @@
 import { runRbnAnalysis, runRbnLiveAnalysis, runRbnSkimmerComparison } from "./src/rbn-orchestrator.mjs";
 import { normalizeBandToken, normalizeCall } from "./src/rbn-normalize.mjs";
-import { validateAnalysisInput, validateLiveInput, validateSkimmerInput } from "./src/input-validation.mjs";
+import {
+  CALLSIGN_PATTERN,
+  LIVE_WINDOW_OPTIONS,
+  SKIMMER_AREA_TYPES,
+  SKIMMER_CONTINENTS,
+  SKIMMER_MAX_WINDOW_HOURS,
+  validateAnalysisInput,
+  validateLiveInput,
+  validateSkimmerInput,
+} from "./src/input-validation.mjs";
 import { preloadCtyData, resolveDxccFromInput } from "./src/cty-lookup.mjs";
 import {
   CONTINENT_ORDER,
@@ -152,6 +161,7 @@ const ui = {
 };
 
 let html2CanvasLoadPromise = null;
+const TAB_NAV_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
 
 function setActiveChapter(chapter) {
   const normalized = chapter === "live" || chapter === "skimmer" ? chapter : "historical";
@@ -161,6 +171,7 @@ function setActiveChapter(chapter) {
     const isActive = tab.dataset.chapterTab === normalized;
     tab.classList.toggle("is-active", isActive);
     tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    tab.tabIndex = isActive ? 0 : -1;
   }
 
   if (ui.chapterHistorical) ui.chapterHistorical.hidden = normalized !== "historical";
@@ -326,6 +337,190 @@ function formatUtcTsToDateTimeDisplay(ts) {
   const hour = String(d.getUTCHours()).padStart(2, "0");
   const minute = String(d.getUTCMinutes()).padStart(2, "0");
   return `${day}-${month}-${year} ${hour}:${minute}`;
+}
+
+function setFieldValidationState(field, invalid, statusId) {
+  if (!field) return;
+  field.setAttribute("aria-invalid", invalid ? "true" : "false");
+  if (statusId) field.setAttribute("aria-describedby", statusId);
+}
+
+function annotateAllFieldValidity(fields, invalidIds, statusId) {
+  const invalid = invalidIds instanceof Set ? invalidIds : new Set();
+  for (const entry of fields) {
+    setFieldValidationState(entry?.node, invalid.has(entry?.id), statusId);
+  }
+}
+
+function getDuplicateCallsByField(entries) {
+  const counts = new Map();
+  for (const entry of entries) {
+    if (!entry?.call) continue;
+    counts.set(entry.call, (counts.get(entry.call) || 0) + 1);
+  }
+
+  const duplicateFieldIds = new Set();
+  for (const entry of entries) {
+    if (!entry?.call) continue;
+    if ((counts.get(entry.call) || 0) > 1) duplicateFieldIds.add(entry.fieldId);
+  }
+  return duplicateFieldIds;
+}
+
+function collectAnalysisInvalidFields(model) {
+  const invalid = new Set();
+  const primaryRaw = String(ui.datePrimary?.value || "").trim();
+  const secondaryRaw = String(ui.dateSecondary?.value || "").trim();
+  const primaryIso = parseDateInputToIso(primaryRaw);
+  const secondaryIso = parseDateInputToIso(secondaryRaw);
+
+  if (!primaryIso) invalid.add("datePrimary");
+  if (secondaryRaw && !secondaryIso) invalid.add("dateSecondary");
+  if (primaryIso && secondaryIso && primaryIso === secondaryIso) {
+    invalid.add("datePrimary");
+    invalid.add("dateSecondary");
+  }
+
+  const calls = [
+    { fieldId: "callPrimary", call: normalizeCall(ui.callPrimary?.value) },
+    { fieldId: "callCompare1", call: normalizeCall(ui.callCompare1?.value) },
+    { fieldId: "callCompare2", call: normalizeCall(ui.callCompare2?.value) },
+    { fieldId: "callCompare3", call: normalizeCall(ui.callCompare3?.value) },
+  ];
+  if (!model.primary || !CALLSIGN_PATTERN.test(model.primary)) invalid.add("callPrimary");
+  for (const entry of calls.slice(1)) {
+    if (!entry.call) continue;
+    if (!CALLSIGN_PATTERN.test(entry.call)) invalid.add(entry.fieldId);
+  }
+  for (const fieldId of getDuplicateCallsByField(calls.filter((entry) => entry.call))) {
+    invalid.add(fieldId);
+  }
+
+  return invalid;
+}
+
+function collectLiveInvalidFields(model) {
+  const invalid = new Set();
+  const calls = [
+    { fieldId: "liveCallPrimary", call: normalizeCall(ui.liveCallPrimary?.value) },
+    { fieldId: "liveCallCompare1", call: normalizeCall(ui.liveCallCompare1?.value) },
+    { fieldId: "liveCallCompare2", call: normalizeCall(ui.liveCallCompare2?.value) },
+    { fieldId: "liveCallCompare3", call: normalizeCall(ui.liveCallCompare3?.value) },
+  ];
+
+  if (!model.primary || !CALLSIGN_PATTERN.test(model.primary)) invalid.add("liveCallPrimary");
+  for (const entry of calls.slice(1)) {
+    if (!entry.call) continue;
+    if (!CALLSIGN_PATTERN.test(entry.call)) invalid.add(entry.fieldId);
+  }
+  for (const fieldId of getDuplicateCallsByField(calls.filter((entry) => entry.call))) {
+    invalid.add(fieldId);
+  }
+  if (!LIVE_WINDOW_OPTIONS.has(Number(model.windowHours))) invalid.add("liveWindow");
+
+  return invalid;
+}
+
+function collectSkimmerInvalidFields(model) {
+  const invalid = new Set();
+  const fromRaw = String(ui.skimmerFrom?.value || "").trim();
+  const toRaw = String(ui.skimmerTo?.value || "").trim();
+  const fromTs = parseDateTimeInputToUtcTs(fromRaw);
+  const toTs = parseDateTimeInputToUtcTs(toRaw);
+
+  if (!Number.isFinite(fromTs)) invalid.add("skimmerFrom");
+  if (!Number.isFinite(toTs)) invalid.add("skimmerTo");
+  if (Number.isFinite(fromTs) && Number.isFinite(toTs)) {
+    if (toTs <= fromTs) {
+      invalid.add("skimmerFrom");
+      invalid.add("skimmerTo");
+    }
+    if (toTs - fromTs > SKIMMER_MAX_WINDOW_HOURS * 3600 * 1000) {
+      invalid.add("skimmerFrom");
+      invalid.add("skimmerTo");
+    }
+  }
+
+  if (!SKIMMER_AREA_TYPES.has(String(model.areaType || "").toUpperCase())) {
+    invalid.add("skimmerAreaType");
+  }
+  if (model.areaType !== "GLOBAL") {
+    const areaValue = String(model.areaValue || "").trim();
+    if (!areaValue) {
+      invalid.add("skimmerAreaValue");
+    } else if (model.areaType === "CONTINENT" && !SKIMMER_CONTINENTS.has(areaValue.toUpperCase())) {
+      invalid.add("skimmerAreaValue");
+    } else if (model.areaType === "CQ" || model.areaType === "ITU") {
+      const zone = Number(areaValue);
+      if (!Number.isInteger(zone) || zone < 1 || zone > 90) invalid.add("skimmerAreaValue");
+    }
+  }
+
+  const calls = [
+    { fieldId: "skimmerCallPrimary", call: normalizeCall(ui.skimmerCallPrimary?.value) },
+    { fieldId: "skimmerCallCompare1", call: normalizeCall(ui.skimmerCallCompare1?.value) },
+    { fieldId: "skimmerCallCompare2", call: normalizeCall(ui.skimmerCallCompare2?.value) },
+    { fieldId: "skimmerCallCompare3", call: normalizeCall(ui.skimmerCallCompare3?.value) },
+  ];
+  if (!model.primary || !CALLSIGN_PATTERN.test(model.primary)) invalid.add("skimmerCallPrimary");
+  for (const entry of calls.slice(1)) {
+    if (!entry.call) continue;
+    if (!CALLSIGN_PATTERN.test(entry.call)) invalid.add(entry.fieldId);
+  }
+  for (const fieldId of getDuplicateCallsByField(calls.filter((entry) => entry.call))) {
+    invalid.add(fieldId);
+  }
+
+  return invalid;
+}
+
+function updateAnalysisFieldValidity(model) {
+  const invalid = collectAnalysisInvalidFields(model);
+  annotateAllFieldValidity(
+    [
+      { id: "datePrimary", node: ui.datePrimary },
+      { id: "dateSecondary", node: ui.dateSecondary },
+      { id: "callPrimary", node: ui.callPrimary },
+      { id: "callCompare1", node: ui.callCompare1 },
+      { id: "callCompare2", node: ui.callCompare2 },
+      { id: "callCompare3", node: ui.callCompare3 },
+    ],
+    invalid,
+    "status-message",
+  );
+}
+
+function updateLiveFieldValidity(model) {
+  const invalid = collectLiveInvalidFields(model);
+  annotateAllFieldValidity(
+    [
+      { id: "liveWindow", node: ui.liveWindow },
+      { id: "liveCallPrimary", node: ui.liveCallPrimary },
+      { id: "liveCallCompare1", node: ui.liveCallCompare1 },
+      { id: "liveCallCompare2", node: ui.liveCallCompare2 },
+      { id: "liveCallCompare3", node: ui.liveCallCompare3 },
+    ],
+    invalid,
+    "live-status-message",
+  );
+}
+
+function updateSkimmerFieldValidity(model) {
+  const invalid = collectSkimmerInvalidFields(model);
+  annotateAllFieldValidity(
+    [
+      { id: "skimmerFrom", node: ui.skimmerFrom },
+      { id: "skimmerTo", node: ui.skimmerTo },
+      { id: "skimmerAreaType", node: ui.skimmerAreaType },
+      { id: "skimmerAreaValue", node: ui.skimmerAreaValue },
+      { id: "skimmerCallPrimary", node: ui.skimmerCallPrimary },
+      { id: "skimmerCallCompare1", node: ui.skimmerCallCompare1 },
+      { id: "skimmerCallCompare2", node: ui.skimmerCallCompare2 },
+      { id: "skimmerCallCompare3", node: ui.skimmerCallCompare3 },
+    ],
+    invalid,
+    "skimmer-status-message",
+  );
 }
 
 function collectInputModel() {
@@ -797,9 +992,11 @@ function updateCardLegend(card, bands, activeFilter) {
   const chips = list
     .map((band) => {
       const active = !hasFilter || activeFilter.has(band);
+      const safeBand = escapeHtml(band);
+      const safeLabel = escapeHtml(formatBandLabel(band));
       return `
-        <button type="button" class="rbn-legend-item rbn-legend-toggle${active ? " is-active" : ""}" data-band="${band}">
-          <i style="background:${bandColorForChart(band)}"></i>${formatBandLabel(band)}
+        <button type="button" class="rbn-legend-item rbn-legend-toggle${active ? " is-active" : ""}" data-band="${safeBand}">
+          <i style="background:${bandColorForChart(band)}"></i>${safeLabel}
         </button>
       `;
     })
@@ -1645,6 +1842,7 @@ function refreshFormState(options = {}) {
   const model = collectInputModel();
   const validation = validateModel(model);
   syncStateFromModel(model);
+  updateAnalysisFieldValidity(model);
 
   if (state.status === "running") {
     ui.startButton.disabled = true;
@@ -1695,6 +1893,7 @@ function refreshLiveFormState(options = {}) {
   const model = collectLiveInputModel();
   const validation = validateLiveInput(model);
   syncLiveStateFromModel(model);
+  updateLiveFieldValidity(model);
 
   if (liveState.status === "running") {
     ui.liveStartButton.disabled = true;
@@ -1763,6 +1962,7 @@ function refreshSkimmerFormState(options = {}) {
   const model = collectSkimmerInputModel();
   const validation = validateSkimmerInput(model);
   syncSkimmerStateFromModel(model);
+  updateSkimmerFieldValidity(model);
 
   const needsValue = model.areaType !== "GLOBAL";
   if (ui.skimmerAreaValue) {
@@ -2179,6 +2379,8 @@ function loadHtml2CanvasLibrary() {
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
     script.async = true;
+    script.crossOrigin = "anonymous";
+    script.referrerPolicy = "strict-origin-when-cross-origin";
     script.onload = () => {
       if (typeof window.html2canvas === "function") {
         resolve(window.html2canvas);
@@ -2470,6 +2672,30 @@ function handleChapterTabClick(event) {
   setActiveChapter(button.dataset.chapterTab || "historical");
 }
 
+function handleChapterTabKeydown(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest("[data-chapter-tab]");
+  if (!(button instanceof HTMLButtonElement)) return;
+  if (!TAB_NAV_KEYS.has(event.key)) return;
+  event.preventDefault();
+
+  const tabs = ui.chapterTabs.filter((tab) => tab instanceof HTMLButtonElement);
+  const currentIndex = tabs.indexOf(button);
+  if (currentIndex < 0) return;
+
+  let nextIndex = currentIndex;
+  if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+  if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = tabs.length - 1;
+
+  const next = tabs[nextIndex];
+  if (!next) return;
+  setActiveChapter(next.dataset.chapterTab || "historical");
+  next.focus();
+}
+
 function bindEvents() {
   const onDatePrimaryChange = () => {
     suggestSecondaryDateFromPrimary();
@@ -2502,6 +2728,7 @@ function bindEvents() {
   document.addEventListener("visibilitychange", syncLiveRefreshTimer);
   for (const tab of ui.chapterTabs) {
     tab.addEventListener("click", handleChapterTabClick);
+    tab.addEventListener("keydown", handleChapterTabKeydown);
   }
 }
 
