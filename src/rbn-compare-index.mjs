@@ -5,6 +5,7 @@ const CONTINENT_ORDER = ["NA", "SA", "EU", "AF", "AS", "OC"];
 
 const indexCache = new Map();
 const rankingCache = new Map();
+const rankingP75Cache = new Map();
 
 const BAND_ORDER_INDEX = new Map([
   "2190M",
@@ -90,6 +91,9 @@ function clearSlotCaches(slotId) {
   for (const key of rankingCache.keys()) {
     if (key.startsWith(`${slotId}|`)) rankingCache.delete(key);
   }
+  for (const key of rankingP75Cache.keys()) {
+    if (key.startsWith(`${slotId}|`)) rankingP75Cache.delete(key);
+  }
 }
 
 function getOrBuildSlotIndex(slot) {
@@ -162,6 +166,67 @@ function getOrBuildRanking(slot, bandKey) {
   return built;
 }
 
+function percentile(values, q = 0.75) {
+  const list = (Array.isArray(values) ? values : []).filter((value) => Number.isFinite(value));
+  if (!list.length) return null;
+  list.sort((a, b) => a - b);
+  const p = Math.max(0, Math.min(1, Number(q)));
+  const index = Math.max(0, Math.min(list.length - 1, Math.floor(p * (list.length - 1))));
+  return list[index];
+}
+
+function getOrBuildRankingByP75(slot, bandKey, options = {}) {
+  const index = getOrBuildSlotIndex(slot);
+  if (!index) return null;
+  const normalizedBand = normalizeBandToken(bandKey || "");
+  const minSamples = Math.max(1, Math.floor(Number(options?.minSamples) || 1));
+  const cacheKey = `${slot.id}|P75|${normalizedBand || "ALL"}|${minSamples}`;
+  const cached = rankingP75Cache.get(cacheKey);
+  if (cached && cached.dataKey === index.dataKey) return cached;
+
+  const byContinent = new Map();
+
+  for (const entry of index.bySpotter.values()) {
+    const continent = entry.continent || "N/A";
+    if (continent === "N/A") continue;
+
+    let values = [];
+    let count = 0;
+    if (normalizedBand) {
+      const flat = entry.byBand.get(normalizedBand) || [];
+      count = entry.bandCounts.get(normalizedBand) || 0;
+      for (let i = 1; i < flat.length; i += 2) {
+        if (Number.isFinite(flat[i])) values.push(flat[i]);
+      }
+    } else {
+      for (const [band, flat] of entry.byBand.entries()) {
+        const bandCount = entry.bandCounts.get(band) || 0;
+        count += bandCount;
+        for (let i = 1; i < flat.length; i += 2) {
+          if (Number.isFinite(flat[i])) values.push(flat[i]);
+        }
+      }
+    }
+
+    if (count < minSamples || !values.length) continue;
+    const p75 = percentile(values, 0.75);
+    values = [];
+    if (!Number.isFinite(p75)) continue;
+
+    if (!byContinent.has(continent)) byContinent.set(continent, []);
+    byContinent.get(continent).push({ spotter: entry.spotter, count, p75 });
+  }
+
+  for (const [continent, list] of byContinent.entries()) {
+    list.sort((a, b) => b.p75 - a.p75 || b.count - a.count || a.spotter.localeCompare(b.spotter));
+    byContinent.set(continent, list);
+  }
+
+  const built = { dataKey: index.dataKey, byContinent };
+  rankingP75Cache.set(cacheKey, built);
+  return built;
+}
+
 function hashString32(value) {
   const text = String(value || "");
   let hash = 2166136261;
@@ -231,6 +296,7 @@ export {
   sortBands,
   getOrBuildSlotIndex,
   getOrBuildRanking,
+  getOrBuildRankingByP75,
   sampleFlatStrideSeeded,
   computeProportionalCaps,
   slotDataKey,

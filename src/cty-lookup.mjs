@@ -163,6 +163,41 @@ function getContinentForCall(call) {
   return inferFallbackContinent(call);
 }
 
+function normalizeZoneValue(value) {
+  const num = Number(value);
+  if (!Number.isInteger(num) || num < 1 || num > 99) return null;
+  return num;
+}
+
+function getCallGeoMeta(call, options = {}) {
+  const strict = Boolean(options?.strict);
+  const normalized = normalizeCall(call || "");
+  if (!normalized) {
+    return {
+      call: "",
+      matched: false,
+      continent: "",
+      cqZone: null,
+      ituZone: null,
+      dxcc: "",
+    };
+  }
+
+  const entry = lookupPrefix(normalized);
+  const continentFromEntry = normalizeContinent(entry?.continent || "");
+  const fallbackContinent = inferFallbackContinent(normalized);
+  const continent = continentFromEntry || (strict || fallbackContinent === "N/A" ? "" : fallbackContinent);
+
+  return {
+    call: normalized,
+    matched: Boolean(entry),
+    continent: continent || "",
+    cqZone: normalizeZoneValue(entry?.cqZone),
+    ituZone: normalizeZoneValue(entry?.ituZone),
+    dxcc: String(entry?.country || "").trim(),
+  };
+}
+
 async function fetchText(url) {
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -214,4 +249,4 @@ function getCtyState() {
   return { ...ctyState, loaded: Boolean(ctyTable && ctyTable.length) };
 }
 
-export { preloadCtyData, getCtyState, getContinentForCall, normalizeContinent, lookupPrefix };
+export { preloadCtyData, getCtyState, getContinentForCall, getCallGeoMeta, normalizeContinent, lookupPrefix };

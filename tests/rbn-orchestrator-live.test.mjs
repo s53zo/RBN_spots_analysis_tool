@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveLiveWindow } from "../src/rbn-orchestrator.mjs";
+import { resolveLiveWindow, resolveSkimmerWindow, normalizeSkimmerArea } from "../src/rbn-orchestrator.mjs";
 
 test("resolveLiveWindow keeps single UTC day for short windows", () => {
   const nowTs = Date.parse("2026-02-11T05:30:00Z");
@@ -34,4 +34,45 @@ test("resolveLiveWindow falls back to 24h on invalid input", () => {
 
   assert.equal(result.windowHours, 24);
   assert.deepEqual(result.days, ["20260210", "20260211"]);
+});
+
+test("resolveSkimmerWindow spans UTC days and enforces max 48h", () => {
+  const fromTs = Date.parse("2026-02-10T00:00:00Z");
+  const toTs = Date.parse("2026-02-12T12:00:00Z");
+  const result = resolveSkimmerWindow(fromTs, toTs, 48);
+
+  assert.equal(result.fromTs, fromTs);
+  assert.equal(result.toTs, Date.parse("2026-02-12T00:00:00Z"));
+  assert.deepEqual(result.days, ["20260210", "20260211", "20260212"]);
+});
+
+test("normalizeSkimmerArea normalizes area type and values", () => {
+  const cq = normalizeSkimmerArea("cq", " 14 ");
+  const continent = normalizeSkimmerArea("continent", " eu ");
+  const fallback = normalizeSkimmerArea("foo", "bar");
+
+  assert.deepEqual(cq, {
+    type: "CQ",
+    value: "14",
+    continent: "",
+    dxcc: "",
+    cqZone: 14,
+    ituZone: null,
+  });
+  assert.deepEqual(continent, {
+    type: "CONTINENT",
+    value: "EU",
+    continent: "EU",
+    dxcc: "",
+    cqZone: null,
+    ituZone: null,
+  });
+  assert.deepEqual(fallback, {
+    type: "GLOBAL",
+    value: "",
+    continent: "",
+    dxcc: "",
+    cqZone: null,
+    ituZone: null,
+  });
 });

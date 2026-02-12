@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getOrBuildSlotIndex, getOrBuildRanking } from "../src/rbn-compare-index.mjs";
+import { getOrBuildSlotIndex, getOrBuildRanking, getOrBuildRankingByP75 } from "../src/rbn-compare-index.mjs";
 
 function buildSlot() {
   return {
@@ -45,3 +45,17 @@ test("getOrBuildRanking returns continent grouped ranking", () => {
   assert.equal(na40[0].count, 1);
 });
 
+test("getOrBuildRankingByP75 ranks by p75 with count tiebreak", () => {
+  const slot = buildSlot();
+  // Add one more North America spotter so we can verify p75 ordering.
+  slot.raw.ofUsSpots.push({ spotter: "K2ZZZ", band: "40M", ts: 5000, snr: 18 });
+  slot.raw.ofUsSpots.push({ spotter: "K2ZZZ", band: "40M", ts: 6000, snr: 20 });
+  slot.totalOfUs = slot.raw.ofUsSpots.length;
+
+  const ranking40 = getOrBuildRankingByP75(slot, "40M", { minSamples: 1 });
+  const na40 = ranking40.byContinent.get("NA") || [];
+
+  assert.equal(na40[0].spotter, "K2ZZZ");
+  assert.equal(na40[0].count, 2);
+  assert.equal(Math.round(na40[0].p75), 18);
+});
