@@ -158,8 +158,11 @@ const ui = {
   liveCallCompare2: document.querySelector("#live-call-compare-2"),
   liveCallCompare3: document.querySelector("#live-call-compare-3"),
   startButton: document.querySelector("#start-analysis"),
+  copyPermalinkHistorical: document.querySelector("#copy-permalink-historical"),
   liveStartButton: document.querySelector("#start-live-analysis"),
+  copyPermalinkLive: document.querySelector("#copy-permalink-live"),
   skimmerStartButton: document.querySelector("#start-skimmer-analysis"),
+  copyPermalinkSkimmer: document.querySelector("#copy-permalink-skimmer"),
   statusPill: document.querySelector("#status-pill"),
   statusMessage: document.querySelector("#status-message"),
   checkFetch: document.querySelector("#check-fetch"),
@@ -199,6 +202,7 @@ const TAB_NAV_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
 const CHART_PLOT_MARGIN = Object.freeze({ left: 52, right: 12, top: 16, bottom: 26 });
 const MIN_ZOOM_DRAG_PX = 8;
 const MIN_ZOOM_WINDOW_MS = 60 * 1000;
+const PERMALINK_VERSION = "v1";
 
 function setActiveChapter(chapter) {
   const normalized = chapter === "live" || chapter === "skimmer" ? chapter : "historical";
@@ -374,6 +378,242 @@ function formatUtcTsToDateTimeDisplay(ts) {
   const hour = String(d.getUTCHours()).padStart(2, "0");
   const minute = String(d.getUTCMinutes()).padStart(2, "0");
   return `${day}-${month}-${year} ${hour}:${minute}`;
+}
+
+function normalizeChapter(chapter) {
+  const value = String(chapter || "").trim().toLowerCase();
+  if (value === "live" || value === "skimmer") return value;
+  return "historical";
+}
+
+function encodeBase64UrlUtf8(text) {
+  const bytes = new TextEncoder().encode(String(text || ""));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+function decodeBase64UrlUtf8(encoded) {
+  const base = String(encoded || "").replaceAll("-", "+").replaceAll("_", "/");
+  const padLength = (4 - (base.length % 4 || 4)) % 4;
+  const padded = base + "=".repeat(padLength);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function serializeChartState(chart) {
+  const selectedBands = Array.isArray(chart?.selectedBands)
+    ? Array.from(new Set(chart.selectedBands.map((band) => normalizeBandToken(band)).filter(Boolean)))
+    : [];
+
+  const selectedByContinent = {};
+  for (const [key, value] of Object.entries(chart?.selectedByContinent || {})) {
+    const region = String(key || "").trim().toUpperCase();
+    const spotter = String(value || "").trim().toUpperCase();
+    if (!region || !spotter) continue;
+    selectedByContinent[region] = spotter;
+  }
+
+  const zoomByContinent = {};
+  for (const [key, range] of Object.entries(chart?.zoomByContinent || {})) {
+    const region = String(key || "").trim().toUpperCase();
+    const minTs = Number(range?.minTs);
+    const maxTs = Number(range?.maxTs);
+    if (!region || !Number.isFinite(minTs) || !Number.isFinite(maxTs) || maxTs <= minTs) continue;
+    zoomByContinent[region] = { minTs, maxTs };
+  }
+
+  return { selectedBands, selectedByContinent, zoomByContinent };
+}
+
+function deserializeChartState(input) {
+  const selectedBands = Array.isArray(input?.selectedBands)
+    ? Array.from(new Set(input.selectedBands.map((band) => normalizeBandToken(band)).filter(Boolean)))
+    : [];
+
+  const selectedByContinent = {};
+  for (const [key, value] of Object.entries(input?.selectedByContinent || {})) {
+    const region = String(key || "").trim().toUpperCase();
+    const spotter = String(value || "").trim().toUpperCase();
+    if (!region || !spotter) continue;
+    selectedByContinent[region] = spotter;
+  }
+
+  const zoomByContinent = {};
+  for (const [key, range] of Object.entries(input?.zoomByContinent || {})) {
+    const region = String(key || "").trim().toUpperCase();
+    const minTs = Number(range?.minTs);
+    const maxTs = Number(range?.maxTs);
+    if (!region || !Number.isFinite(minTs) || !Number.isFinite(maxTs) || maxTs <= minTs) continue;
+    zoomByContinent[region] = { minTs, maxTs };
+  }
+
+  return { selectedBands, selectedByContinent, zoomByContinent };
+}
+
+function buildPermalinkPayload(activeChapterOverride) {
+  return {
+    schema: PERMALINK_VERSION,
+    activeChapter: normalizeChapter(activeChapterOverride || state.activeChapter),
+    historical: {
+      model: collectInputModel(),
+      chart: serializeChartState(state.chart),
+    },
+    live: {
+      model: collectLiveInputModel(),
+      chart: serializeChartState(liveState.chart),
+    },
+    skimmer: {
+      model: collectSkimmerInputModel(),
+      chart: serializeChartState(skimmerState.chart),
+    },
+  };
+}
+
+function buildPermalinkUrl(activeChapterOverride) {
+  const payload = buildPermalinkPayload(activeChapterOverride);
+  const encoded = encodeBase64UrlUtf8(JSON.stringify(payload));
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.searchParams.set("pl", PERMALINK_VERSION);
+  url.searchParams.set("cfg", encoded);
+  return url.toString();
+}
+
+function parsePermalinkPayloadFromUrl() {
+  const url = new URL(window.location.href);
+  const version = String(url.searchParams.get("pl") || "").trim();
+  const encoded = String(url.searchParams.get("cfg") || "").trim();
+  if (version !== PERMALINK_VERSION || !encoded) return null;
+  try {
+    const decoded = decodeBase64UrlUtf8(encoded);
+    const parsed = JSON.parse(decoded);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function applyHistoricalModelToUi(model) {
+  const dates = Array.isArray(model?.dates) ? model.dates.filter(Boolean).slice(0, 2) : [];
+  const date1 = parseDateInputToIso(dates[0] || "");
+  const date2 = parseDateInputToIso(dates[1] || "");
+  const date1Display = date1 ? formatIsoToDisplay(date1) : "";
+  const date2Display = date2 ? formatIsoToDisplay(date2) : "";
+  if (ui.datePrimary) ui.datePrimary.value = date1Display;
+  if (ui.dateSecondary) ui.dateSecondary.value = date2Display;
+  state.datePickers.primary?.setDate(date1 || null, false, "Y-m-d");
+  state.datePickers.secondary?.setDate(date2 || null, false, "Y-m-d");
+
+  const calls = [
+    normalizeCall(model?.primary || ""),
+    ...(Array.isArray(model?.comparisons) ? model.comparisons.map((item) => normalizeCall(item || "")).slice(0, 3) : []),
+  ];
+  if (ui.callPrimary) ui.callPrimary.value = calls[0] || "";
+  if (ui.callCompare1) ui.callCompare1.value = calls[1] || "";
+  if (ui.callCompare2) ui.callCompare2.value = calls[2] || "";
+  if (ui.callCompare3) ui.callCompare3.value = calls[3] || "";
+}
+
+function applyLiveModelToUi(model) {
+  const windowHours = Number(model?.windowHours || 24);
+  if (ui.liveWindow) {
+    ui.liveWindow.value = LIVE_WINDOW_OPTIONS.has(windowHours) ? String(windowHours) : "24";
+  }
+  const calls = [
+    normalizeCall(model?.primary || ""),
+    ...(Array.isArray(model?.comparisons) ? model.comparisons.map((item) => normalizeCall(item || "")).slice(0, 3) : []),
+  ];
+  if (ui.liveCallPrimary) ui.liveCallPrimary.value = calls[0] || "";
+  if (ui.liveCallCompare1) ui.liveCallCompare1.value = calls[1] || "";
+  if (ui.liveCallCompare2) ui.liveCallCompare2.value = calls[2] || "";
+  if (ui.liveCallCompare3) ui.liveCallCompare3.value = calls[3] || "";
+}
+
+function applySkimmerModelToUi(model) {
+  const fromTs = Number(model?.fromTsUtc);
+  const toTs = Number(model?.toTsUtc);
+  const fromDisplay = Number.isFinite(fromTs) ? formatUtcTsToDateTimeDisplay(fromTs) : "";
+  const toDisplay = Number.isFinite(toTs) ? formatUtcTsToDateTimeDisplay(toTs) : "";
+  if (ui.skimmerFrom) ui.skimmerFrom.value = fromDisplay;
+  if (ui.skimmerTo) ui.skimmerTo.value = toDisplay;
+  state.datePickers.skimmerFrom?.setDate(fromDisplay || null, false, "d-m-Y H:i");
+  state.datePickers.skimmerTo?.setDate(toDisplay || null, false, "d-m-Y H:i");
+
+  const areaType = String(model?.areaType || "GLOBAL").trim().toUpperCase();
+  if (ui.skimmerAreaType) {
+    ui.skimmerAreaType.value = SKIMMER_AREA_TYPES.has(areaType) ? areaType : "GLOBAL";
+  }
+  if (ui.skimmerAreaValue) ui.skimmerAreaValue.value = String(model?.areaValue || "").trim();
+
+  const calls = [
+    normalizeCall(model?.primary || ""),
+    ...(Array.isArray(model?.comparisons) ? model.comparisons.map((item) => normalizeCall(item || "")).slice(0, 3) : []),
+  ];
+  if (ui.skimmerCallPrimary) ui.skimmerCallPrimary.value = calls[0] || "";
+  if (ui.skimmerCallCompare1) ui.skimmerCallCompare1.value = calls[1] || "";
+  if (ui.skimmerCallCompare2) ui.skimmerCallCompare2.value = calls[2] || "";
+  if (ui.skimmerCallCompare3) ui.skimmerCallCompare3.value = calls[3] || "";
+}
+
+function applyPermalinkPayload(payload) {
+  state.activeChapter = normalizeChapter(payload?.activeChapter);
+  applyHistoricalModelToUi(payload?.historical?.model || {});
+  applyLiveModelToUi(payload?.live?.model || {});
+  applySkimmerModelToUi(payload?.skimmer?.model || {});
+
+  state.chart = { ...state.chart, ...deserializeChartState(payload?.historical?.chart) };
+  liveState.chart = { ...liveState.chart, ...deserializeChartState(payload?.live?.chart) };
+  skimmerState.chart = { ...skimmerState.chart, ...deserializeChartState(payload?.skimmer?.chart) };
+}
+
+function refreshPermalinkButtons() {
+  if (ui.copyPermalinkHistorical) {
+    ui.copyPermalinkHistorical.hidden = !(state.status === "ready" && Boolean(state.analysis));
+  }
+  if (ui.copyPermalinkLive) {
+    ui.copyPermalinkLive.hidden = !(liveState.status === "ready" && Boolean(liveState.analysis));
+  }
+  if (ui.copyPermalinkSkimmer) {
+    ui.copyPermalinkSkimmer.hidden = !(skimmerState.status === "ready" && Boolean(skimmerState.analysis));
+  }
+}
+
+function markPermalinkButtonResult(button, message, stateName = "copied") {
+  if (!(button instanceof HTMLButtonElement)) return;
+  const prevText = button.textContent || "Copy permalink";
+  const prevTitle = button.title || "Copy permalink";
+  button.dataset.state = stateName;
+  button.textContent = message;
+  button.title = message;
+  setTimeout(() => {
+    button.dataset.state = "";
+    button.textContent = prevText;
+    button.title = prevTitle;
+  }, 1400);
+}
+
+async function copyPermalinkForChapter(chapter, button) {
+  const url = buildPermalinkUrl(chapter);
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      markPermalinkButtonResult(button, "Permalink copied");
+      return;
+    }
+  } catch {
+    // Fallback below.
+  }
+  const accepted = window.confirm("Clipboard unavailable. Open a prompt with permalink text?");
+  if (accepted) {
+    window.prompt("Copy permalink URL:", url);
+  }
+  markPermalinkButtonResult(button, "Permalink ready");
 }
 
 function setFieldValidationState(field, invalid, statusId) {
@@ -892,6 +1132,7 @@ function setStatus(status, message) {
   const showMessage = status !== "idle" && Boolean(message);
   ui.statusMessage.hidden = !showMessage;
   ui.statusMessage.textContent = showMessage ? message : "";
+  refreshPermalinkButtons();
 }
 
 function setStartButtonMode(mode) {
@@ -901,13 +1142,15 @@ function setStartButtonMode(mode) {
 
 function setLiveStatus(status, message) {
   liveState.status = status;
-  if (!ui.liveStatusPill || !ui.liveStatusMessage) return;
-  const visualStatus = status === "idle" ? "ready" : status;
-  ui.liveStatusPill.dataset.state = visualStatus;
-  ui.liveStatusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
-  const showMessage = status !== "idle" && Boolean(message);
-  ui.liveStatusMessage.hidden = !showMessage;
-  ui.liveStatusMessage.textContent = showMessage ? message : "";
+  if (ui.liveStatusPill && ui.liveStatusMessage) {
+    const visualStatus = status === "idle" ? "ready" : status;
+    ui.liveStatusPill.dataset.state = visualStatus;
+    ui.liveStatusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
+    const showMessage = status !== "idle" && Boolean(message);
+    ui.liveStatusMessage.hidden = !showMessage;
+    ui.liveStatusMessage.textContent = showMessage ? message : "";
+  }
+  refreshPermalinkButtons();
 }
 
 function setLiveStartButtonMode(mode) {
@@ -917,13 +1160,15 @@ function setLiveStartButtonMode(mode) {
 
 function setSkimmerStatus(status, message) {
   skimmerState.status = status;
-  if (!ui.skimmerStatusPill || !ui.skimmerStatusMessage) return;
-  const visualStatus = status === "idle" ? "ready" : status;
-  ui.skimmerStatusPill.dataset.state = visualStatus;
-  ui.skimmerStatusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
-  const showMessage = status !== "idle" && Boolean(message);
-  ui.skimmerStatusMessage.hidden = !showMessage;
-  ui.skimmerStatusMessage.textContent = showMessage ? message : "";
+  if (ui.skimmerStatusPill && ui.skimmerStatusMessage) {
+    const visualStatus = status === "idle" ? "ready" : status;
+    ui.skimmerStatusPill.dataset.state = visualStatus;
+    ui.skimmerStatusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
+    const showMessage = status !== "idle" && Boolean(message);
+    ui.skimmerStatusMessage.hidden = !showMessage;
+    ui.skimmerStatusMessage.textContent = showMessage ? message : "";
+  }
+  refreshPermalinkButtons();
 }
 
 function setSkimmerStartButtonMode(mode) {
@@ -2639,6 +2884,7 @@ function handleSkimmerReset() {
 
 async function runSkimmerAnalysis(model, options = {}) {
   const source = String(options.source || "manual");
+  const preserveChartState = Boolean(options.preserveChartState);
   const runToken = skimmerState.activeRunToken + 1;
   skimmerState.activeRunToken = runToken;
   resetSkimmerLoadChecks();
@@ -2679,9 +2925,11 @@ async function runSkimmerAnalysis(model, options = {}) {
     if (runToken !== skimmerState.activeRunToken) return;
     setLoadCheck(ui.skimmerCheckFetch, "ok");
 
-    skimmerState.chart.selectedBands = [];
-    skimmerState.chart.selectedByContinent = {};
-    skimmerState.chart.zoomByContinent = {};
+    if (!preserveChartState) {
+      skimmerState.chart.selectedBands = [];
+      skimmerState.chart.selectedByContinent = {};
+      skimmerState.chart.zoomByContinent = {};
+    }
     skimmerState.analysis = result;
     renderSkimmerAnalysisCharts();
 
@@ -2944,6 +3192,37 @@ async function handleSubmit(event) {
   state.chart.zoomByContinent = {};
   state.retry.model = { ...model, comparisons: [...(model.comparisons || [])] };
   await runHistoricalAnalysis(model, { source: "manual" });
+}
+
+async function autorunFromPermalinkIfPresent(payload) {
+  if (!payload) return;
+  const chapter = normalizeChapter(payload?.activeChapter || state.activeChapter);
+
+  if (chapter === "live") {
+    const { model, validation } = refreshLiveFormState({ silentStatus: true });
+    if (!validation.ok) return;
+    clearLiveRetryCountdown();
+    liveState.retry.attempts = 0;
+    await runLiveAnalysis(model, { source: "permalink" });
+    return;
+  }
+
+  if (chapter === "skimmer") {
+    skimmerState.validation.showErrors = true;
+    const { model, validation } = refreshSkimmerFormState({ silentStatus: true });
+    if (!validation.ok) return;
+    clearSkimmerRetryCountdown();
+    skimmerState.retry.attempts = 0;
+    await runSkimmerAnalysis(model, { source: "permalink", preserveChartState: true });
+    return;
+  }
+
+  const { model, validation } = refreshFormState({ silentStatus: true });
+  if (!validation.ok) return;
+  clearRetryCountdown();
+  state.retry.attempts = 0;
+  state.retry.model = { ...model, comparisons: [...(model.comparisons || [])] };
+  await runHistoricalAnalysis(model, { source: "permalink" });
 }
 
 function handleLegendBandClick(event) {
@@ -3336,6 +3615,17 @@ function handleCopyCardClick(event) {
   copyCardAsImage(card, button);
 }
 
+function handleCopyPermalinkClick(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest("#copy-permalink-historical, #copy-permalink-live, #copy-permalink-skimmer");
+  if (!(button instanceof HTMLButtonElement)) return;
+  let chapter = "historical";
+  if (button.id === "copy-permalink-live") chapter = "live";
+  if (button.id === "copy-permalink-skimmer") chapter = "skimmer";
+  copyPermalinkForChapter(chapter, button);
+}
+
 function handleChapterTabClick(event) {
   const target = event.target;
   if (!(target instanceof Element)) return;
@@ -3399,6 +3689,9 @@ function bindEvents() {
   ui.liveChartsRoot.addEventListener("click", handleCopyCardClick);
   ui.skimmerChartsRoot.addEventListener("click", handleLegendBandClick);
   ui.skimmerChartsRoot.addEventListener("click", handleCopyCardClick);
+  ui.copyPermalinkHistorical?.addEventListener("click", handleCopyPermalinkClick);
+  ui.copyPermalinkLive?.addEventListener("click", handleCopyPermalinkClick);
+  ui.copyPermalinkSkimmer?.addEventListener("click", handleCopyPermalinkClick);
   document.addEventListener("visibilitychange", syncLiveRefreshTimer);
   for (const tab of ui.chapterTabs) {
     tab.addEventListener("click", handleChapterTabClick);
@@ -3414,6 +3707,10 @@ function preloadBackgroundData() {
 
 bindEvents();
 initDatePickers();
+const initialPermalinkPayload = parsePermalinkPayloadFromUrl();
+if (initialPermalinkPayload) {
+  applyPermalinkPayload(initialPermalinkPayload);
+}
 preloadBackgroundData();
 setActiveChapter(state.activeChapter);
 resetLoadChecks();
@@ -3425,5 +3722,9 @@ renderSkimmerAnalysisCharts();
 refreshFormState();
 refreshLiveFormState();
 refreshSkimmerFormState();
+refreshPermalinkButtons();
+if (initialPermalinkPayload) {
+  void autorunFromPermalinkIfPresent(initialPermalinkPayload);
+}
 
 export { validateModel };

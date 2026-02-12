@@ -630,6 +630,12 @@ button {
   background: var(--accent-soft);
 }
 
+.btn-ghost[data-state="copied"] {
+  border-color: #b9e5cf;
+  background: #ddf4e9;
+  color: #0b6840;
+}
+
 .status-pill {
   justify-self: start;
   border-radius: 999px;
