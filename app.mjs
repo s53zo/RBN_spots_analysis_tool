@@ -202,7 +202,7 @@ const TAB_NAV_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
 const CHART_PLOT_MARGIN = Object.freeze({ left: 52, right: 12, top: 16, bottom: 26 });
 const MIN_ZOOM_DRAG_PX = 8;
 const MIN_ZOOM_WINDOW_MS = 60 * 1000;
-const PERMALINK_VERSION = "v1";
+const PERMALINK_VERSION = "v2";
 
 function setActiveChapter(chapter) {
   const normalized = chapter === "live" || chapter === "skimmer" ? chapter : "historical";
@@ -457,7 +457,7 @@ function deserializeChartState(input) {
 
 function buildPermalinkPayload(activeChapterOverride) {
   return {
-    schema: PERMALINK_VERSION,
+    schema: "v1",
     activeChapter: normalizeChapter(activeChapterOverride || state.activeChapter),
     historical: {
       model: collectInputModel(),
@@ -474,9 +474,134 @@ function buildPermalinkPayload(activeChapterOverride) {
   };
 }
 
+function compactChartState(chart) {
+  const stateModel = serializeChartState(chart);
+  const compact = {};
+  if (Array.isArray(stateModel.selectedBands) && stateModel.selectedBands.length) compact.b = stateModel.selectedBands;
+  if (stateModel.selectedByContinent && Object.keys(stateModel.selectedByContinent).length) compact.s = stateModel.selectedByContinent;
+  if (stateModel.zoomByContinent && Object.keys(stateModel.zoomByContinent).length) {
+    const zoom = {};
+    for (const [key, range] of Object.entries(stateModel.zoomByContinent)) {
+      const minTs = Number(range?.minTs);
+      const maxTs = Number(range?.maxTs);
+      if (!Number.isFinite(minTs) || !Number.isFinite(maxTs) || maxTs <= minTs) continue;
+      zoom[key] = [Math.round(minTs), Math.round(maxTs)];
+    }
+    if (Object.keys(zoom).length) compact.z = zoom;
+  }
+  return compact;
+}
+
+function expandCompactChartState(compact) {
+  const input = compact && typeof compact === "object" ? compact : {};
+  const zoomByContinent = {};
+  for (const [key, pair] of Object.entries(input.z || {})) {
+    if (!Array.isArray(pair) || pair.length < 2) continue;
+    const minTs = Number(pair[0]);
+    const maxTs = Number(pair[1]);
+    if (!Number.isFinite(minTs) || !Number.isFinite(maxTs) || maxTs <= minTs) continue;
+    zoomByContinent[String(key || "").toUpperCase()] = { minTs, maxTs };
+  }
+  return deserializeChartState({
+    selectedBands: Array.isArray(input.b) ? input.b : [],
+    selectedByContinent: input.s && typeof input.s === "object" ? input.s : {},
+    zoomByContinent,
+  });
+}
+
+function compactCanonicalPermalinkPayload(canonical) {
+  const historicalModel = canonical?.historical?.model || {};
+  const liveModel = canonical?.live?.model || {};
+  const skimmerModel = canonical?.skimmer?.model || {};
+  const hModel = {};
+  const hDates = Array.isArray(historicalModel.dates) ? historicalModel.dates.filter(Boolean).slice(0, 2) : [];
+  const hPrimary = String(historicalModel.primary || "");
+  const hComp = Array.isArray(historicalModel.comparisons) ? historicalModel.comparisons.filter(Boolean).slice(0, 3) : [];
+  if (hDates.length) hModel.d = hDates;
+  if (hPrimary) hModel.p = hPrimary;
+  if (hComp.length) hModel.x = hComp;
+
+  const lModel = {};
+  const lWindow = Number(liveModel.windowHours || 24);
+  const lPrimary = String(liveModel.primary || "");
+  const lComp = Array.isArray(liveModel.comparisons) ? liveModel.comparisons.filter(Boolean).slice(0, 3) : [];
+  if (Number.isFinite(lWindow) && lWindow !== 24) lModel.w = lWindow;
+  if (lPrimary) lModel.p = lPrimary;
+  if (lComp.length) lModel.x = lComp;
+
+  const kModel = {};
+  const kFrom = Number(skimmerModel.fromTsUtc);
+  const kTo = Number(skimmerModel.toTsUtc);
+  const kType = String(skimmerModel.areaType || "GLOBAL").toUpperCase();
+  const kValue = String(skimmerModel.areaValue || "");
+  const kPrimary = String(skimmerModel.primary || "");
+  const kComp = Array.isArray(skimmerModel.comparisons) ? skimmerModel.comparisons.filter(Boolean).slice(0, 3) : [];
+  if (Number.isFinite(kFrom)) kModel.f = kFrom;
+  if (Number.isFinite(kTo)) kModel.t = kTo;
+  if (kType && kType !== "GLOBAL") kModel.y = kType;
+  if (kValue) kModel.v = kValue;
+  if (kPrimary) kModel.p = kPrimary;
+  if (kComp.length) kModel.x = kComp;
+
+  return {
+    a: normalizeChapter(canonical?.activeChapter),
+    h: {
+      m: hModel,
+      c: compactChartState(canonical?.historical?.chart),
+    },
+    l: {
+      m: lModel,
+      c: compactChartState(canonical?.live?.chart),
+    },
+    k: {
+      m: kModel,
+      c: compactChartState(canonical?.skimmer?.chart),
+    },
+  };
+}
+
+function expandCompactPermalinkPayload(compact) {
+  const source = compact && typeof compact === "object" ? compact : {};
+  const historicalModel = source.h?.m || {};
+  const liveModel = source.l?.m || {};
+  const skimmerModel = source.k?.m || {};
+  return {
+    schema: "v1",
+    activeChapter: normalizeChapter(source.a),
+    historical: {
+      model: {
+        dates: Array.isArray(historicalModel.d) ? historicalModel.d.filter(Boolean).slice(0, 2) : [],
+        primary: normalizeCall(historicalModel.p || ""),
+        comparisons: Array.isArray(historicalModel.x) ? historicalModel.x.map((call) => normalizeCall(call || "")).filter(Boolean).slice(0, 3) : [],
+      },
+      chart: expandCompactChartState(source.h?.c),
+    },
+    live: {
+      model: {
+        windowHours: Number(liveModel.w || 24),
+        primary: normalizeCall(liveModel.p || ""),
+        comparisons: Array.isArray(liveModel.x) ? liveModel.x.map((call) => normalizeCall(call || "")).filter(Boolean).slice(0, 3) : [],
+      },
+      chart: expandCompactChartState(source.l?.c),
+    },
+    skimmer: {
+      model: {
+        fromTsUtc: Number(skimmerModel.f),
+        toTsUtc: Number(skimmerModel.t),
+        areaType: String(skimmerModel.y || "GLOBAL").toUpperCase(),
+        areaValue: String(skimmerModel.v || ""),
+        primary: normalizeCall(skimmerModel.p || ""),
+        comparisons: Array.isArray(skimmerModel.x) ? skimmerModel.x.map((call) => normalizeCall(call || "")).filter(Boolean).slice(0, 3) : [],
+      },
+      chart: expandCompactChartState(source.k?.c),
+    },
+  };
+}
+
 function buildPermalinkUrl(activeChapterOverride) {
-  const payload = buildPermalinkPayload(activeChapterOverride);
-  const encoded = encodeBase64UrlUtf8(JSON.stringify(payload));
+  const canonical = buildPermalinkPayload(activeChapterOverride);
+  const compact = compactCanonicalPermalinkPayload(canonical);
+  const encoded = encodeBase64UrlUtf8(JSON.stringify(compact));
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("pl", PERMALINK_VERSION);
@@ -488,12 +613,13 @@ function parsePermalinkPayloadFromUrl() {
   const url = new URL(window.location.href);
   const version = String(url.searchParams.get("pl") || "").trim();
   const encoded = String(url.searchParams.get("cfg") || "").trim();
-  if (version !== PERMALINK_VERSION || !encoded) return null;
+  if (!encoded || (version !== "v1" && version !== "v2")) return null;
   try {
     const decoded = decodeBase64UrlUtf8(encoded);
     const parsed = JSON.parse(decoded);
     if (!parsed || typeof parsed !== "object") return null;
-    return parsed;
+    if (version === "v1") return parsed;
+    return expandCompactPermalinkPayload(parsed);
   } catch {
     return null;
   }
