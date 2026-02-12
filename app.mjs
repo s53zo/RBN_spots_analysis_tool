@@ -1,6 +1,6 @@
-import { runRbnAnalysis, runRbnLiveAnalysis } from "./src/rbn-orchestrator.mjs";
+import { runRbnAnalysis, runRbnLiveAnalysis, runRbnSkimmerComparison } from "./src/rbn-orchestrator.mjs";
 import { normalizeBandToken, normalizeCall } from "./src/rbn-normalize.mjs";
-import { validateAnalysisInput, validateLiveInput } from "./src/input-validation.mjs";
+import { validateAnalysisInput, validateLiveInput, validateSkimmerInput } from "./src/input-validation.mjs";
 import { preloadCtyData } from "./src/cty-lookup.mjs";
 import {
   CONTINENT_ORDER,
@@ -36,6 +36,8 @@ const state = {
   datePickers: {
     primary: null,
     secondary: null,
+    skimmerFrom: null,
+    skimmerTo: null,
   },
   chart: {
     selectedBands: [],
@@ -72,6 +74,29 @@ const liveState = {
   },
 };
 
+const skimmerState = {
+  status: "idle",
+  fromTsUtc: 0,
+  toTsUtc: 0,
+  areaType: "GLOBAL",
+  areaValue: "",
+  slots: {
+    A: { call: "" },
+    B: { call: "" },
+    C: { call: "" },
+    D: { call: "" },
+  },
+  activeRunToken: 0,
+  analysis: null,
+  chart: {
+    selectedBands: [],
+    selectedByContinent: {},
+    drawRaf: 0,
+    resizeObserver: null,
+    intersectionObserver: null,
+  },
+};
+
 const ui = {
   chapterTabs: Array.from(document.querySelectorAll("[data-chapter-tab]")),
   chapterHistorical: document.querySelector("#chapter-historical"),
@@ -79,6 +104,7 @@ const ui = {
   chapterSkimmer: document.querySelector("#chapter-skimmer"),
   form: document.querySelector("#analysis-form"),
   liveForm: document.querySelector("#live-analysis-form"),
+  skimmerForm: document.querySelector("#skimmer-analysis-form"),
   datePrimary: document.querySelector("#date-primary"),
   dateSecondary: document.querySelector("#date-secondary"),
   callPrimary: document.querySelector("#call-primary"),
@@ -86,12 +112,21 @@ const ui = {
   callCompare2: document.querySelector("#call-compare-2"),
   callCompare3: document.querySelector("#call-compare-3"),
   liveWindow: document.querySelector("#live-window"),
+  skimmerFrom: document.querySelector("#skimmer-from"),
+  skimmerTo: document.querySelector("#skimmer-to"),
+  skimmerAreaType: document.querySelector("#skimmer-area-type"),
+  skimmerAreaValue: document.querySelector("#skimmer-area-value"),
+  skimmerCallPrimary: document.querySelector("#skimmer-call-primary"),
+  skimmerCallCompare1: document.querySelector("#skimmer-call-compare-1"),
+  skimmerCallCompare2: document.querySelector("#skimmer-call-compare-2"),
+  skimmerCallCompare3: document.querySelector("#skimmer-call-compare-3"),
   liveCallPrimary: document.querySelector("#live-call-primary"),
   liveCallCompare1: document.querySelector("#live-call-compare-1"),
   liveCallCompare2: document.querySelector("#live-call-compare-2"),
   liveCallCompare3: document.querySelector("#live-call-compare-3"),
   startButton: document.querySelector("#start-analysis"),
   liveStartButton: document.querySelector("#start-live-analysis"),
+  skimmerStartButton: document.querySelector("#start-skimmer-analysis"),
   statusPill: document.querySelector("#status-pill"),
   statusMessage: document.querySelector("#status-message"),
   checkFetch: document.querySelector("#check-fetch"),
@@ -101,11 +136,18 @@ const ui = {
   chartsRoot: document.querySelector("#charts-root"),
   liveStatusPill: document.querySelector("#live-status-pill"),
   liveStatusMessage: document.querySelector("#live-status-message"),
+  skimmerStatusPill: document.querySelector("#skimmer-status-pill"),
+  skimmerStatusMessage: document.querySelector("#skimmer-status-message"),
   liveCheckFetch: document.querySelector("#live-check-fetch"),
   liveCheckCty: document.querySelector("#live-check-cty"),
   liveCheckCharts: document.querySelector("#live-check-charts"),
+  skimmerCheckFetch: document.querySelector("#skimmer-check-fetch"),
+  skimmerCheckCty: document.querySelector("#skimmer-check-cty"),
+  skimmerCheckCharts: document.querySelector("#skimmer-check-charts"),
   liveChartsNote: document.querySelector("#live-charts-note"),
   liveChartsRoot: document.querySelector("#live-charts-root"),
+  skimmerChartsNote: document.querySelector("#skimmer-charts-note"),
+  skimmerChartsRoot: document.querySelector("#skimmer-charts-root"),
 };
 
 let html2CanvasLoadPromise = null;
@@ -222,6 +264,69 @@ function formatIsoToDisplay(iso) {
   return `${day}-${month}-${year}`;
 }
 
+function parseDateTimeInputToUtcTs(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return NaN;
+
+  let year = "";
+  let month = "";
+  let day = "";
+  let hour = "00";
+  let minute = "00";
+
+  let match = raw.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+  if (match) {
+    day = match[1];
+    month = match[2];
+    year = match[3];
+    if (match[4] != null) hour = match[4];
+    if (match[5] != null) minute = match[5];
+  } else {
+    match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?$/);
+    if (!match) return NaN;
+    year = match[1];
+    month = match[2];
+    day = match[3];
+    if (match[4] != null) hour = match[4];
+    if (match[5] != null) minute = match[5];
+  }
+
+  const y = Number(year);
+  const mo = Number(month);
+  const d = Number(day);
+  const h = Number(hour);
+  const mi = Number(minute);
+  if (!Number.isInteger(y) || !Number.isInteger(mo) || !Number.isInteger(d) || !Number.isInteger(h) || !Number.isInteger(mi)) {
+    return NaN;
+  }
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h < 0 || h > 23 || mi < 0 || mi > 59) return NaN;
+
+  const ts = Date.UTC(y, mo - 1, d, h, mi, 0, 0);
+  if (!Number.isFinite(ts)) return NaN;
+  const check = new Date(ts);
+  if (
+    check.getUTCFullYear() !== y ||
+    check.getUTCMonth() !== mo - 1 ||
+    check.getUTCDate() !== d ||
+    check.getUTCHours() !== h ||
+    check.getUTCMinutes() !== mi
+  ) {
+    return NaN;
+  }
+  return ts;
+}
+
+function formatUtcTsToDateTimeDisplay(ts) {
+  if (!Number.isFinite(ts)) return "";
+  const d = new Date(ts);
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const year = String(d.getUTCFullYear());
+  const hour = String(d.getUTCHours()).padStart(2, "0");
+  const minute = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day}-${month}-${year} ${hour}:${minute}`;
+}
+
 function collectInputModel() {
   const dates = [parseDateInputToIso(ui.datePrimary?.value), parseDateInputToIso(ui.dateSecondary?.value)].filter(Boolean);
   const calls = [
@@ -253,6 +358,28 @@ function collectLiveInputModel() {
   };
 }
 
+function collectSkimmerInputModel() {
+  const calls = [
+    normalizeCall(ui.skimmerCallPrimary?.value),
+    normalizeCall(ui.skimmerCallCompare1?.value),
+    normalizeCall(ui.skimmerCallCompare2?.value),
+    normalizeCall(ui.skimmerCallCompare3?.value),
+  ];
+  const fromTsUtc = parseDateTimeInputToUtcTs(ui.skimmerFrom?.value);
+  const toTsUtc = parseDateTimeInputToUtcTs(ui.skimmerTo?.value);
+  const areaType = String(ui.skimmerAreaType?.value || "GLOBAL").trim().toUpperCase();
+  const areaValue = String(ui.skimmerAreaValue?.value || "").trim();
+
+  return {
+    fromTsUtc,
+    toTsUtc,
+    areaType,
+    areaValue,
+    primary: calls[0],
+    comparisons: calls.slice(1).filter(Boolean),
+  };
+}
+
 function addUtcDay(isoDate, daysToAdd = 1) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(isoDate || ""))) return "";
   const date = new Date(`${isoDate}T00:00:00Z`);
@@ -279,7 +406,6 @@ function suggestSecondaryDateFromPrimary() {
 function initDatePickers() {
   const flatpickrFn = globalThis?.flatpickr;
   if (typeof flatpickrFn !== "function") return;
-  if (!ui.datePrimary || !ui.dateSecondary) return;
 
   const baseOptions = {
     dateFormat: "d-m-Y",
@@ -292,20 +418,65 @@ function initDatePickers() {
     },
   };
 
-  state.datePickers.primary = flatpickrFn(ui.datePrimary, {
-    ...baseOptions,
-    onChange: () => {
-      suggestSecondaryDateFromPrimary();
-      refreshFormState();
-    },
-    onClose: () => refreshFormState(),
-  });
+  if (ui.datePrimary) {
+    state.datePickers.primary = flatpickrFn(ui.datePrimary, {
+      ...baseOptions,
+      onChange: () => {
+        suggestSecondaryDateFromPrimary();
+        refreshFormState();
+      },
+      onClose: () => refreshFormState(),
+    });
+  }
 
-  state.datePickers.secondary = flatpickrFn(ui.dateSecondary, {
-    ...baseOptions,
-    onChange: () => refreshFormState(),
-    onClose: () => refreshFormState(),
-  });
+  if (ui.dateSecondary) {
+    state.datePickers.secondary = flatpickrFn(ui.dateSecondary, {
+      ...baseOptions,
+      onChange: () => refreshFormState(),
+      onClose: () => refreshFormState(),
+    });
+  }
+
+  const dateTimeOptions = {
+    dateFormat: "d-m-Y H:i",
+    enableTime: true,
+    time_24hr: true,
+    allowInput: true,
+    disableMobile: true,
+    clickOpens: true,
+    static: false,
+    locale: {
+      firstDayOfWeek: 1,
+    },
+  };
+
+  if (ui.skimmerFrom) {
+    state.datePickers.skimmerFrom = flatpickrFn(ui.skimmerFrom, {
+      ...dateTimeOptions,
+      onChange: () => refreshSkimmerFormState(),
+      onClose: () => refreshSkimmerFormState(),
+    });
+  }
+
+  if (ui.skimmerTo) {
+    state.datePickers.skimmerTo = flatpickrFn(ui.skimmerTo, {
+      ...dateTimeOptions,
+      onChange: () => refreshSkimmerFormState(),
+      onClose: () => refreshSkimmerFormState(),
+    });
+  }
+
+  const hasFrom = Number.isFinite(parseDateTimeInputToUtcTs(ui.skimmerFrom?.value));
+  const hasTo = Number.isFinite(parseDateTimeInputToUtcTs(ui.skimmerTo?.value));
+  const now = Date.now();
+  const roundedNow = now - (now % (5 * 60 * 1000));
+  const defaultFrom = roundedNow - 6 * 3600 * 1000;
+  if (!hasFrom && ui.skimmerFrom) {
+    ui.skimmerFrom.value = formatUtcTsToDateTimeDisplay(defaultFrom);
+  }
+  if (!hasTo && ui.skimmerTo) {
+    ui.skimmerTo.value = formatUtcTsToDateTimeDisplay(roundedNow);
+  }
 }
 
 const validateModel = validateAnalysisInput;
@@ -341,6 +512,22 @@ function setLiveStartButtonMode(mode) {
   ui.liveStartButton.dataset.state = mode || "idle";
 }
 
+function setSkimmerStatus(status, message) {
+  skimmerState.status = status;
+  if (!ui.skimmerStatusPill || !ui.skimmerStatusMessage) return;
+  const visualStatus = status === "idle" ? "ready" : status;
+  ui.skimmerStatusPill.dataset.state = visualStatus;
+  ui.skimmerStatusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
+  const showMessage = status !== "idle" && Boolean(message);
+  ui.skimmerStatusMessage.hidden = !showMessage;
+  ui.skimmerStatusMessage.textContent = showMessage ? message : "";
+}
+
+function setSkimmerStartButtonMode(mode) {
+  if (!ui.skimmerStartButton) return;
+  ui.skimmerStartButton.dataset.state = mode || "idle";
+}
+
 function setLoadCheck(node, status) {
   if (!node) return;
   node.dataset.state = status;
@@ -367,6 +554,12 @@ function resetLiveLoadChecks() {
   setLoadCheck(ui.liveCheckFetch, "pending");
   setLoadCheck(ui.liveCheckCty, "pending");
   setLoadCheck(ui.liveCheckCharts, "pending");
+}
+
+function resetSkimmerLoadChecks() {
+  setLoadCheck(ui.skimmerCheckFetch, "pending");
+  setLoadCheck(ui.skimmerCheckCty, "pending");
+  setLoadCheck(ui.skimmerCheckCharts, "pending");
 }
 
 function clearRetryCountdown() {
@@ -414,6 +607,17 @@ function syncLiveStateFromModel(model) {
   liveState.slots.B.call = model?.comparisons?.[0] || "";
   liveState.slots.C.call = model?.comparisons?.[1] || "";
   liveState.slots.D.call = model?.comparisons?.[2] || "";
+}
+
+function syncSkimmerStateFromModel(model) {
+  skimmerState.fromTsUtc = Number(model?.fromTsUtc) || 0;
+  skimmerState.toTsUtc = Number(model?.toTsUtc) || 0;
+  skimmerState.areaType = String(model?.areaType || "GLOBAL").toUpperCase();
+  skimmerState.areaValue = String(model?.areaValue || "");
+  skimmerState.slots.A.call = model?.primary || "";
+  skimmerState.slots.B.call = model?.comparisons?.[0] || "";
+  skimmerState.slots.C.call = model?.comparisons?.[1] || "";
+  skimmerState.slots.D.call = model?.comparisons?.[2] || "";
 }
 
 function teardownChartObservers() {
@@ -1150,6 +1354,37 @@ function renderLiveAnalysisCharts() {
   bindLiveChartInteractions(slots);
 }
 
+function renderSkimmerAnalysisCharts() {
+  if (ui.skimmerChartsNote) ui.skimmerChartsNote.hidden = Boolean(skimmerState.analysis);
+
+  if (!skimmerState.analysis) {
+    ui.skimmerChartsRoot.classList.add("empty-state");
+    ui.skimmerChartsRoot.innerHTML = "<p>No skimmer comparison results yet.</p>";
+    setLoadCheck(ui.skimmerCheckCharts, "pending");
+    return;
+  }
+
+  const loaded = skimmerState.analysis.slots.filter((slot) => slot.status === "ready").length;
+  const failed = skimmerState.analysis.slots.filter((slot) => slot.status === "error" || slot.status === "qrx").length;
+  const totalPoints = skimmerState.analysis.slots.reduce(
+    (sum, slot) => sum + (Number.isFinite(slot.totalOfUs) ? Number(slot.totalOfUs) : 0),
+    0,
+  );
+  const from = formatUtcTsToDateTimeDisplay(skimmerState.analysis.fromTs);
+  const to = formatUtcTsToDateTimeDisplay(skimmerState.analysis.toTs);
+
+  ui.skimmerChartsRoot.classList.remove("empty-state");
+  ui.skimmerChartsRoot.innerHTML = `
+    <div class="chart-empty">
+      <p><b>Skimmer comparison loaded.</b></p>
+      <p>Window: ${escapeHtml(from)} UTC → ${escapeHtml(to)} UTC</p>
+      <p>Callsigns loaded: ${loaded} · Failed: ${failed}</p>
+      <p>Filtered spot count: ${formatNumber(totalPoints)}</p>
+    </div>
+  `;
+  setLoadCheck(ui.skimmerCheckCharts, "ok");
+}
+
 function refreshFormState(options = {}) {
   const { silentStatus = false } = options;
   const model = collectInputModel();
@@ -1268,6 +1503,117 @@ function handleLiveReset() {
   });
 }
 
+function refreshSkimmerFormState(options = {}) {
+  const { silentStatus = false } = options;
+  const model = collectSkimmerInputModel();
+  const validation = validateSkimmerInput(model);
+  syncSkimmerStateFromModel(model);
+
+  const needsValue = model.areaType !== "GLOBAL";
+  if (ui.skimmerAreaValue) {
+    ui.skimmerAreaValue.disabled = !needsValue;
+    if (!needsValue) ui.skimmerAreaValue.value = "";
+  }
+
+  if (skimmerState.status === "running") {
+    ui.skimmerStartButton.disabled = true;
+    setSkimmerStartButtonMode("running");
+    return { model, validation };
+  }
+
+  ui.skimmerStartButton.disabled = !validation.ok;
+  setSkimmerStartButtonMode(validation.ok ? "ready" : "idle");
+  if (!silentStatus) {
+    if (validation.ok) {
+      setSkimmerStatus("ready", validation.reason);
+    } else {
+      setSkimmerStatus("idle", validation.reason);
+    }
+  }
+
+  return { model, validation };
+}
+
+function handleSkimmerInput() {
+  refreshSkimmerFormState();
+}
+
+function handleSkimmerReset() {
+  queueMicrotask(() => {
+    state.datePickers.skimmerFrom?.clear();
+    state.datePickers.skimmerTo?.clear();
+    skimmerState.analysis = null;
+    skimmerState.chart.selectedBands = [];
+    skimmerState.chart.selectedByContinent = {};
+    const now = Date.now();
+    const roundedNow = now - (now % (5 * 60 * 1000));
+    const defaultFrom = roundedNow - 6 * 3600 * 1000;
+    if (ui.skimmerFrom) ui.skimmerFrom.value = formatUtcTsToDateTimeDisplay(defaultFrom);
+    if (ui.skimmerTo) ui.skimmerTo.value = formatUtcTsToDateTimeDisplay(roundedNow);
+    if (ui.skimmerAreaType) ui.skimmerAreaType.value = "GLOBAL";
+    if (ui.skimmerAreaValue) ui.skimmerAreaValue.value = "";
+    resetSkimmerLoadChecks();
+    setSkimmerStatus("idle", "Enter required fields to enable skimmer comparison.");
+    renderSkimmerAnalysisCharts();
+    refreshSkimmerFormState();
+  });
+}
+
+async function runSkimmerAnalysis(model) {
+  const runToken = skimmerState.activeRunToken + 1;
+  skimmerState.activeRunToken = runToken;
+  resetSkimmerLoadChecks();
+  setLoadCheck(ui.skimmerCheckCty, "loading");
+  setSkimmerStatus("running", "Loading continent prefixes (cty.dat)...");
+  ui.skimmerStartButton.disabled = true;
+  setSkimmerStartButtonMode("running");
+
+  try {
+    const ctyState = await preloadCtyData();
+    if (runToken !== skimmerState.activeRunToken) return;
+    if (ctyState?.status === "ok") {
+      setLoadCheck(ui.skimmerCheckCty, "ok");
+    } else {
+      setLoadCheck(ui.skimmerCheckCty, "error");
+      throw new Error("cty.dat is required for skimmer area filtering.");
+    }
+
+    setLoadCheck(ui.skimmerCheckFetch, "loading");
+    setSkimmerStatus("running", "Fetching RBN data for skimmer comparison...");
+    const result = await runRbnSkimmerComparison(model);
+    if (runToken !== skimmerState.activeRunToken) return;
+    setLoadCheck(ui.skimmerCheckFetch, "ok");
+
+    skimmerState.analysis = result;
+    renderSkimmerAnalysisCharts();
+
+    const loaded = result.slots.filter((slot) => slot.status === "ready").length;
+    const failed = result.slots.filter((slot) => slot.status === "error" || slot.status === "qrx").length;
+    if (failed && loaded) {
+      setSkimmerStatus("ready", `Skimmer comparison completed with partial results (${loaded} loaded, ${failed} failed).`);
+    } else if (failed && !loaded) {
+      setSkimmerStatus("error", "Skimmer comparison failed for all callsigns.");
+    } else if (!result.hasAnyData) {
+      setSkimmerStatus("ready", "Skimmer comparison completed but no spots matched the selected filter.");
+    } else {
+      setSkimmerStatus("ready", `Skimmer comparison completed for ${loaded} callsign${loaded === 1 ? "" : "s"}.`);
+    }
+  } catch (error) {
+    if (runToken !== skimmerState.activeRunToken) return;
+    if (ui.skimmerCheckFetch?.dataset.state === "loading") setLoadCheck(ui.skimmerCheckFetch, "error");
+    if (ui.skimmerCheckCty?.dataset.state === "loading") setLoadCheck(ui.skimmerCheckCty, "error");
+    setLoadCheck(ui.skimmerCheckCharts, "error");
+    setSkimmerStatus("error", error?.message || "Skimmer comparison failed.");
+  } finally {
+    if (runToken === skimmerState.activeRunToken) {
+      const next = refreshSkimmerFormState({ silentStatus: true });
+      if (next.validation.ok && skimmerState.status !== "running") {
+        ui.skimmerStartButton.disabled = false;
+      }
+    }
+  }
+}
+
 async function runLiveAnalysis(model, options = {}) {
   const source = String(options.source || "manual");
   liveState.refresh.inFlight = true;
@@ -1357,6 +1703,17 @@ async function handleLiveSubmit(event) {
   trackCallsignEntryEvents(model);
   liveState.refresh.lastModel = { ...model, comparisons: [...(model.comparisons || [])] };
   await runLiveAnalysis(model, { source: "manual" });
+}
+
+async function handleSkimmerSubmit(event) {
+  event.preventDefault();
+  const { model, validation } = refreshSkimmerFormState({ silentStatus: true });
+  if (!validation.ok) {
+    setSkimmerStatus("error", validation.reason);
+    return;
+  }
+  trackCallsignEntryEvents(model);
+  await runSkimmerAnalysis(model);
 }
 
 async function handleSubmit(event) {
@@ -1849,10 +2206,15 @@ function bindEvents() {
   ui.liveForm.addEventListener("input", handleLiveInput);
   ui.liveForm.addEventListener("submit", handleLiveSubmit);
   ui.liveForm.addEventListener("reset", handleLiveReset);
+  ui.skimmerForm.addEventListener("input", handleSkimmerInput);
+  ui.skimmerForm.addEventListener("submit", handleSkimmerSubmit);
+  ui.skimmerForm.addEventListener("reset", handleSkimmerReset);
   ui.chartsRoot.addEventListener("click", handleLegendBandClick);
   ui.chartsRoot.addEventListener("click", handleCopyCardClick);
   ui.liveChartsRoot.addEventListener("click", handleLegendBandClick);
   ui.liveChartsRoot.addEventListener("click", handleCopyCardClick);
+  ui.skimmerChartsRoot.addEventListener("click", handleLegendBandClick);
+  ui.skimmerChartsRoot.addEventListener("click", handleCopyCardClick);
   document.addEventListener("visibilitychange", syncLiveRefreshTimer);
   for (const tab of ui.chapterTabs) {
     tab.addEventListener("click", handleChapterTabClick);
@@ -1871,9 +2233,12 @@ preloadBackgroundData();
 setActiveChapter(state.activeChapter);
 resetLoadChecks();
 resetLiveLoadChecks();
+resetSkimmerLoadChecks();
 renderAnalysisCharts();
 renderLiveAnalysisCharts();
+renderSkimmerAnalysisCharts();
 refreshFormState();
 refreshLiveFormState();
+refreshSkimmerFormState();
 
 export { validateModel };

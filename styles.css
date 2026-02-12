@@ -311,6 +311,11 @@ p {
   min-width: 9.8rem;
 }
 
+.setup-row .field.field-datetime {
+  width: 12.2rem;
+  min-width: 12.2rem;
+}
+
 .field label {
   font-size: 0.9rem;
   font-weight: 600;
