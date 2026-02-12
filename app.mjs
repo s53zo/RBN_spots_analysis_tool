@@ -196,6 +196,9 @@ const ui = {
 
 let html2CanvasLoadPromise = null;
 const TAB_NAV_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
+const CHART_PLOT_MARGIN = Object.freeze({ left: 52, right: 12, top: 16, bottom: 26 });
+const MIN_ZOOM_DRAG_PX = 8;
+const MIN_ZOOM_WINDOW_MS = 60 * 1000;
 
 function setActiveChapter(chapter) {
   const normalized = chapter === "live" || chapter === "skimmer" ? chapter : "historical";
@@ -484,6 +487,8 @@ function collectSkimmerInvalidFields(model) {
       invalid.add("skimmerAreaValue");
     } else if (model.areaType === "CONTINENT" && !SKIMMER_CONTINENTS.has(areaValue.toUpperCase())) {
       invalid.add("skimmerAreaValue");
+    } else if (model.areaType === "CALLSIGN" && !CALLSIGN_PATTERN.test(normalizeCall(areaValue))) {
+      invalid.add("skimmerAreaValue");
     } else if (model.areaType === "CQ" || model.areaType === "ITU") {
       const zone = Number(areaValue);
       if (!Number.isInteger(zone) || zone < 1 || zone > 90) invalid.add("skimmerAreaValue");
@@ -578,6 +583,8 @@ function buildSkimmerValidationReport(model) {
       addError("skimmerAreaValue", "Scope value is required for this scope type.");
     } else if (areaType === "CONTINENT" && !SKIMMER_CONTINENTS.has(areaValue.toUpperCase())) {
       addError("skimmerAreaValue", "Continent must be one of NA, SA, EU, AF, AS, OC.");
+    } else if (areaType === "CALLSIGN" && !CALLSIGN_PATTERN.test(normalizeCall(areaValue))) {
+      addError("skimmerAreaValue", "Use a valid callsign (3-20 chars, A-Z, 0-9, / or -).");
     } else if (areaType === "CQ" || areaType === "ITU") {
       const zone = Number(areaValue);
       if (!Number.isInteger(zone) || zone < 1 || zone > 90) addError("skimmerAreaValue", "Zone must be an integer between 1 and 90.");
@@ -761,6 +768,7 @@ function collectSkimmerInputModel() {
 function skimmerAreaPlaceholder(areaType) {
   if (areaType === "CONTINENT") return "NA, SA, EU, AF, AS, OC";
   if (areaType === "DXCC") return "e.g. DL, G, JA, JH or DXCC name";
+  if (areaType === "CALLSIGN") return "e.g. S53ZO";
   if (areaType === "CQ") return "e.g. 14";
   if (areaType === "ITU") return "e.g. 28";
   return "Not required for Global";
@@ -769,6 +777,7 @@ function skimmerAreaPlaceholder(areaType) {
 function skimmerAreaValueHelpText(areaType) {
   if (areaType === "DXCC") return "DXCC examples: JA, DL, W, or country name.";
   if (areaType === "CONTINENT") return "Continent examples: EU, NA, AS, SA, AF, OC.";
+  if (areaType === "CALLSIGN") return "Callsign example: S53ZO (exact target-station filter).";
   if (areaType === "CQ") return "Enter CQ zone number (1-90).";
   if (areaType === "ITU") return "Enter ITU zone number (1-90).";
   return "Global selected: scope value is not required.";
@@ -1348,6 +1357,133 @@ function updateCardMeta(card, pointTotal, minSnr, maxSnr) {
   node.textContent = `${formatNumber(pointTotal)} points plotted · SNR range: ${snrText}`;
 }
 
+function resolveChartViewRange(globalMinTs, globalMaxTs, zoom) {
+  let viewMinTs = Number(globalMinTs);
+  let viewMaxTs = Number(globalMaxTs);
+
+  if (zoom && Number.isFinite(zoom.minTs) && Number.isFinite(zoom.maxTs) && zoom.maxTs > zoom.minTs) {
+    viewMinTs = Math.max(viewMinTs, Number(zoom.minTs));
+    viewMaxTs = Math.min(viewMaxTs, Number(zoom.maxTs));
+  }
+
+  if (!Number.isFinite(viewMinTs) || !Number.isFinite(viewMaxTs) || viewMaxTs <= viewMinTs) {
+    return { minTs: Number(globalMinTs), maxTs: Number(globalMaxTs) };
+  }
+  return { minTs: viewMinTs, maxTs: viewMaxTs };
+}
+
+function getCanvasTimeRange(canvas) {
+  if (!(canvas instanceof HTMLCanvasElement)) return null;
+  const minTs = Number(canvas.dataset.viewMinTs);
+  const maxTs = Number(canvas.dataset.viewMaxTs);
+  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs) || maxTs <= minTs) return null;
+  return { minTs, maxTs };
+}
+
+function getCanvasPlotBounds(canvas) {
+  if (!(canvas instanceof HTMLCanvasElement)) return null;
+  const rect = canvas.getBoundingClientRect();
+  const cssWidth = Math.max(320, canvas.clientWidth || Math.floor(rect.width) || 920);
+  const cssHeight = Math.max(220, Number(canvas.dataset.height) || 280);
+  const left = CHART_PLOT_MARGIN.left;
+  const right = Math.max(left + 10, cssWidth - CHART_PLOT_MARGIN.right);
+  const top = CHART_PLOT_MARGIN.top;
+  const bottom = Math.max(top + 10, cssHeight - CHART_PLOT_MARGIN.bottom);
+  return {
+    rect,
+    left,
+    right,
+    top,
+    bottom,
+    width: Math.max(1, right - left),
+  };
+}
+
+function xToTimeOnCanvas(canvas, clientX) {
+  const range = getCanvasTimeRange(canvas);
+  const bounds = getCanvasPlotBounds(canvas);
+  if (!range || !bounds) return null;
+  const localX = clientX - bounds.rect.left;
+  const clampedX = Math.max(bounds.left, Math.min(bounds.right, localX));
+  const ratio = (clampedX - bounds.left) / Math.max(1, bounds.width);
+  const ts = range.minTs + ratio * (range.maxTs - range.minTs);
+  return { ts, x: clampedX, bounds };
+}
+
+function hideZoomBrush(brush) {
+  if (!(brush instanceof HTMLElement)) return;
+  brush.hidden = true;
+  brush.style.width = "0px";
+}
+
+function showZoomBrush(brush, bounds, startX, currentX) {
+  if (!(brush instanceof HTMLElement) || !bounds) return;
+  const left = Math.min(startX, currentX);
+  const width = Math.max(1, Math.abs(currentX - startX));
+  brush.style.left = `${left}px`;
+  brush.style.top = `${bounds.top}px`;
+  brush.style.width = `${width}px`;
+  brush.style.height = `${Math.max(1, bounds.bottom - bounds.top)}px`;
+  brush.hidden = false;
+}
+
+function bindZoomInteractions(canvases, chartState, scheduleDraw, slots) {
+  for (const canvas of canvases) {
+    if (!(canvas instanceof HTMLCanvasElement)) continue;
+    const key = String(canvas.dataset.continent || "N/A").toUpperCase();
+    const plot = canvas.closest(".rbn-signal-plot");
+    const brush = plot?.querySelector(".rbn-zoom-brush");
+    let drag = null;
+
+    canvas.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const mapped = xToTimeOnCanvas(canvas, event.clientX);
+      if (!mapped) return;
+      drag = { pointerId: event.pointerId, startTs: mapped.ts, startX: mapped.x, bounds: mapped.bounds };
+      canvas.setPointerCapture(event.pointerId);
+      showZoomBrush(brush, mapped.bounds, mapped.x, mapped.x);
+      event.preventDefault();
+    });
+
+    canvas.addEventListener("pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const mapped = xToTimeOnCanvas(canvas, event.clientX);
+      if (!mapped) return;
+      showZoomBrush(brush, drag.bounds, drag.startX, mapped.x);
+    });
+
+    const finishDrag = (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const mapped = xToTimeOnCanvas(canvas, event.clientX);
+      const startTs = drag.startTs;
+      const startX = drag.startX;
+      drag = null;
+      hideZoomBrush(brush);
+      if (!mapped) return;
+      if (Math.abs(mapped.x - startX) < MIN_ZOOM_DRAG_PX) return;
+
+      const minTs = Math.min(startTs, mapped.ts);
+      const maxTs = Math.max(startTs, mapped.ts);
+      if (maxTs - minTs < MIN_ZOOM_WINDOW_MS) return;
+
+      chartState.zoomByContinent[key] = { minTs, maxTs };
+      scheduleDraw(slots);
+    };
+
+    canvas.addEventListener("pointerup", finishDrag);
+    canvas.addEventListener("pointercancel", () => {
+      drag = null;
+      hideZoomBrush(brush);
+    });
+    canvas.addEventListener("dblclick", () => {
+      if (!chartState.zoomByContinent[key]) return;
+      delete chartState.zoomByContinent[key];
+      hideZoomBrush(brush);
+      scheduleDraw(slots);
+    });
+  }
+}
+
 function drawCharts(slots) {
   const canvases = Array.from(ui.chartsRoot.querySelectorAll(".rbn-signal-canvas")).filter((canvas) => {
     if (!(canvas instanceof HTMLCanvasElement)) return false;
@@ -1356,7 +1492,7 @@ function drawCharts(slots) {
   });
   if (!canvases.length) return;
 
-  const { minTs, maxTs } = getGlobalTimeRange(slots);
+  const { minTs: globalMinTs, maxTs: globalMaxTs } = getGlobalTimeRange(slots);
   const availableBands = getAvailableBands(slots);
   const bandFilterSet = getActiveBandFilterSet();
 
@@ -1366,6 +1502,10 @@ function drawCharts(slots) {
     const scopeLabel = String(canvas.dataset.scopeLabel || "").trim();
     const regionLabel = scopeLabel || continentLabel(continent);
     const spotter = String(canvas.dataset.spotter || "");
+
+    const zoomRange = resolveChartViewRange(globalMinTs, globalMaxTs, state.chart.zoomByContinent[continent]);
+    const minTs = zoomRange.minTs;
+    const maxTs = zoomRange.maxTs;
 
     if (!spotter) {
       drawRbnSignalCanvas(canvas, {
@@ -1381,6 +1521,10 @@ function drawCharts(slots) {
         updateCardLegend(card, availableBands, bandFilterSet);
         updateCardMeta(card, 0, null, null);
       }
+      canvas.dataset.globalMinTs = String(globalMinTs);
+      canvas.dataset.globalMaxTs = String(globalMaxTs);
+      canvas.dataset.viewMinTs = String(minTs);
+      canvas.dataset.viewMaxTs = String(maxTs);
       continue;
     }
 
@@ -1419,6 +1563,10 @@ function drawCharts(slots) {
 
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", `${title}. ${formatNumber(model.pointTotal)} points plotted.`);
+    canvas.dataset.globalMinTs = String(globalMinTs);
+    canvas.dataset.globalMaxTs = String(globalMaxTs);
+    canvas.dataset.viewMinTs = String(minTs);
+    canvas.dataset.viewMaxTs = String(maxTs);
   }
 }
 
@@ -1447,6 +1595,7 @@ function bindChartInteractions(slots) {
   }
 
   const canvases = Array.from(ui.chartsRoot.querySelectorAll(".rbn-signal-canvas"));
+  bindZoomInteractions(canvases, state.chart, scheduleChartDraw, slots);
   if (typeof ResizeObserver === "function") {
     state.chart.resizeObserver = new ResizeObserver(() => scheduleChartDraw(slots));
     for (const canvas of canvases) {
@@ -1575,6 +1724,7 @@ function renderAnalysisCharts() {
           <div class="rbn-signal-body">
             <div class="rbn-signal-plot">
               <canvas class="rbn-signal-canvas" data-continent="${continent}" data-spotter="${escapeHtml(selectedSpotter)}" data-height="280"></canvas>
+              <div class="rbn-zoom-brush" hidden aria-hidden="true"></div>
               <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
             </div>
             <div class="rbn-signal-side">
@@ -1636,18 +1786,24 @@ function drawLiveCharts(slots) {
   });
   if (!canvases.length) return;
 
-  const { minTs, maxTs } = getGlobalTimeRange(slots);
+  const { minTs: globalMinTs, maxTs: globalMaxTs } = getGlobalTimeRange(slots);
   const availableBands = getAvailableBands(slots);
   const bandFilterSet = getLiveActiveBandFilterSet();
 
   for (const canvas of canvases) {
     const card = canvas.closest(".rbn-signal-card");
     const continent = String(canvas.dataset.continent || "N/A").toUpperCase();
+    const scopeLabel = String(canvas.dataset.scopeLabel || "").trim();
+    const regionLabel = scopeLabel || continentLabel(continent);
     const spotter = String(canvas.dataset.spotter || "");
+
+    const zoomRange = resolveChartViewRange(globalMinTs, globalMaxTs, liveState.chart.zoomByContinent[continent]);
+    const minTs = zoomRange.minTs;
+    const maxTs = zoomRange.maxTs;
 
     if (!spotter) {
       drawRbnSignalCanvas(canvas, {
-        title: `${continentLabel(continent)} · no skimmer`,
+        title: `${regionLabel} · no skimmer`,
         minTs,
         maxTs,
         minY: -30,
@@ -1659,6 +1815,10 @@ function drawLiveCharts(slots) {
         updateCardLegend(card, availableBands, bandFilterSet);
         updateCardMeta(card, 0, null, null);
       }
+      canvas.dataset.globalMinTs = String(globalMinTs);
+      canvas.dataset.globalMaxTs = String(globalMaxTs);
+      canvas.dataset.viewMinTs = String(minTs);
+      canvas.dataset.viewMaxTs = String(maxTs);
       continue;
     }
 
@@ -1678,7 +1838,7 @@ function drawLiveCharts(slots) {
     }
 
     const trendlines = buildTrendlines(model.series, minTs, maxTs);
-    const title = `${continentLabel(continent)} · ${spotter}`;
+    const title = `${regionLabel} · ${spotter}`;
 
     drawRbnSignalCanvas(canvas, {
       title,
@@ -1697,6 +1857,10 @@ function drawLiveCharts(slots) {
 
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", `${title}. ${formatNumber(model.pointTotal)} points plotted.`);
+    canvas.dataset.globalMinTs = String(globalMinTs);
+    canvas.dataset.globalMaxTs = String(globalMaxTs);
+    canvas.dataset.viewMinTs = String(minTs);
+    canvas.dataset.viewMaxTs = String(maxTs);
   }
 }
 
@@ -1725,6 +1889,7 @@ function bindLiveChartInteractions(slots) {
   }
 
   const canvases = Array.from(ui.liveChartsRoot.querySelectorAll(".rbn-signal-canvas"));
+  bindZoomInteractions(canvases, liveState.chart, scheduleLiveChartDraw, slots);
   if (typeof ResizeObserver === "function") {
     liveState.chart.resizeObserver = new ResizeObserver(() => scheduleLiveChartDraw(slots));
     for (const canvas of canvases) {
@@ -1853,6 +2018,7 @@ function renderLiveAnalysisCharts() {
           <div class="rbn-signal-body">
             <div class="rbn-signal-plot">
               <canvas class="rbn-signal-canvas" data-continent="${continent}" data-spotter="${escapeHtml(selectedSpotter)}" data-height="280"></canvas>
+              <div class="rbn-zoom-brush" hidden aria-hidden="true"></div>
               <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
             </div>
             <div class="rbn-signal-side">
@@ -1914,7 +2080,7 @@ function drawSkimmerCharts(slots) {
   });
   if (!canvases.length) return;
 
-  const { minTs, maxTs } = getGlobalTimeRange(slots);
+  const { minTs: globalMinTs, maxTs: globalMaxTs } = getGlobalTimeRange(slots);
   const availableBands = getAvailableBands(slots);
   const bandFilterSet = getSkimmerActiveBandFilterSet();
 
@@ -1922,6 +2088,10 @@ function drawSkimmerCharts(slots) {
     const card = canvas.closest(".rbn-signal-card");
     const continent = String(canvas.dataset.continent || "N/A").toUpperCase();
     const spotter = String(canvas.dataset.spotter || "");
+
+    const zoomRange = resolveChartViewRange(globalMinTs, globalMaxTs, skimmerState.chart.zoomByContinent[continent]);
+    const minTs = zoomRange.minTs;
+    const maxTs = zoomRange.maxTs;
 
     if (!spotter) {
       drawRbnSignalCanvas(canvas, {
@@ -1937,6 +2107,10 @@ function drawSkimmerCharts(slots) {
         updateCardLegend(card, availableBands, bandFilterSet);
         updateCardMeta(card, 0, null, null);
       }
+      canvas.dataset.globalMinTs = String(globalMinTs);
+      canvas.dataset.globalMaxTs = String(globalMaxTs);
+      canvas.dataset.viewMinTs = String(minTs);
+      canvas.dataset.viewMaxTs = String(maxTs);
       continue;
     }
 
@@ -1975,6 +2149,10 @@ function drawSkimmerCharts(slots) {
 
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", `${title}. ${formatNumber(model.pointTotal)} points plotted.`);
+    canvas.dataset.globalMinTs = String(globalMinTs);
+    canvas.dataset.globalMaxTs = String(globalMaxTs);
+    canvas.dataset.viewMinTs = String(minTs);
+    canvas.dataset.viewMaxTs = String(maxTs);
   }
 }
 
@@ -2003,6 +2181,7 @@ function bindSkimmerChartInteractions(slots) {
   }
 
   const canvases = Array.from(ui.skimmerChartsRoot.querySelectorAll(".rbn-signal-canvas"));
+  bindZoomInteractions(canvases, skimmerState.chart, scheduleSkimmerChartDraw, slots);
   if (typeof ResizeObserver === "function") {
     skimmerState.chart.resizeObserver = new ResizeObserver(() => scheduleSkimmerChartDraw(slots));
     for (const canvas of canvases) {
@@ -2143,6 +2322,7 @@ function renderSkimmerAnalysisCharts() {
       <div class="rbn-signal-body">
         <div class="rbn-signal-plot">
           <canvas class="rbn-signal-canvas" data-continent="SCOPE" data-scope-label="Selected scope" data-spotter="${escapeHtml(selectedSpotter)}" data-height="320"></canvas>
+          <div class="rbn-zoom-brush" hidden aria-hidden="true"></div>
           <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
         </div>
         <div class="rbn-signal-side">
@@ -2213,6 +2393,7 @@ function handleReset() {
     state.analysis = null;
     state.chart.selectedBands = [];
     state.chart.selectedByContinent = {};
+    state.chart.zoomByContinent = {};
     teardownChartObservers();
     suggestSecondaryDateFromPrimary();
     resetLoadChecks();
@@ -2282,6 +2463,7 @@ function handleLiveReset() {
     liveState.analysis = null;
     liveState.chart.selectedBands = [];
     liveState.chart.selectedByContinent = {};
+    liveState.chart.zoomByContinent = {};
     teardownLiveChartObservers();
     liveState.refresh.lastModel = null;
     liveState.refresh.inFlight = false;
@@ -2438,6 +2620,7 @@ function handleSkimmerReset() {
     skimmerState.analysis = null;
     skimmerState.chart.selectedBands = [];
     skimmerState.chart.selectedByContinent = {};
+    skimmerState.chart.zoomByContinent = {};
     teardownSkimmerChartObservers();
     const now = Date.now();
     const roundedNow = now - (now % (5 * 60 * 1000));
@@ -2498,6 +2681,7 @@ async function runSkimmerAnalysis(model, options = {}) {
 
     skimmerState.chart.selectedBands = [];
     skimmerState.chart.selectedByContinent = {};
+    skimmerState.chart.zoomByContinent = {};
     skimmerState.analysis = result;
     renderSkimmerAnalysisCharts();
 
@@ -2638,6 +2822,7 @@ async function handleLiveSubmit(event) {
   }
   clearLiveRetryCountdown();
   liveState.retry.attempts = 0;
+  liveState.chart.zoomByContinent = {};
   trackCallsignEntryEvents(model);
   liveState.refresh.lastModel = { ...model, comparisons: [...(model.comparisons || [])] };
   await runLiveAnalysis(model, { source: "manual" });
@@ -2655,6 +2840,7 @@ async function handleSkimmerSubmit(event) {
   }
   clearSkimmerRetryCountdown();
   skimmerState.retry.attempts = 0;
+  skimmerState.chart.zoomByContinent = {};
   trackCallsignEntryEvents(model);
   await runSkimmerAnalysis(model);
 }
@@ -2755,6 +2941,7 @@ async function handleSubmit(event) {
   trackCallsignEntryEvents(model);
   clearRetryCountdown();
   state.retry.attempts = 0;
+  state.chart.zoomByContinent = {};
   state.retry.model = { ...model, comparisons: [...(model.comparisons || [])] };
   await runHistoricalAnalysis(model, { source: "manual" });
 }

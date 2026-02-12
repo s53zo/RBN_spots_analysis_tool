@@ -2,7 +2,7 @@ import { normalizeCall } from "./rbn-normalize.mjs";
 
 const CALLSIGN_PATTERN = /^[A-Z0-9/-]{3,20}$/;
 const LIVE_WINDOW_OPTIONS = new Set([1, 6, 12, 24, 48]);
-const SKIMMER_AREA_TYPES = new Set(["GLOBAL", "CONTINENT", "DXCC", "CQ", "ITU"]);
+const SKIMMER_AREA_TYPES = new Set(["GLOBAL", "CONTINENT", "DXCC", "CALLSIGN", "CQ", "ITU"]);
 const SKIMMER_CONTINENTS = new Set(["NA", "SA", "EU", "AF", "AS", "OC"]);
 const SKIMMER_MAX_WINDOW_HOURS = 48;
 
@@ -108,6 +108,8 @@ function normalizeSkimmerInputModel(model) {
   let areaValue = rawAreaValue;
   if (areaType === "CONTINENT") {
     areaValue = rawAreaValue.toUpperCase();
+  } else if (areaType === "CALLSIGN") {
+    areaValue = normalizeCall(rawAreaValue);
   } else if (areaType === "CQ" || areaType === "ITU") {
     const parsed = parseInt(rawAreaValue, 10);
     areaValue = Number.isFinite(parsed) ? String(parsed) : rawAreaValue;
@@ -175,6 +177,9 @@ function validateSkimmerInput(model) {
   }
   if (input.areaType === "DXCC" && input.areaValue.length < 1) {
     return { ok: false, reason: "DXCC filter must include a prefix or DXCC name." };
+  }
+  if (input.areaType === "CALLSIGN" && !CALLSIGN_PATTERN.test(input.areaValue)) {
+    return { ok: false, reason: "CALLSIGN filter must be a valid callsign." };
   }
 
   return { ok: true, reason: "Ready to start skimmer comparison." };

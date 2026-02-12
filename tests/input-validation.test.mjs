@@ -167,3 +167,28 @@ test("validateSkimmerInput accepts DXCC prefix filter", () => {
   });
   assert.equal(result.ok, true);
 });
+
+test("validateSkimmerInput accepts CALLSIGN filter", () => {
+  const result = validateSkimmerInput({
+    primary: "S53ZO",
+    comparisons: [],
+    fromTsUtc: Date.parse("2026-02-10T00:00:00Z"),
+    toTsUtc: Date.parse("2026-02-10T01:00:00Z"),
+    areaType: "CALLSIGN",
+    areaValue: "dl8las",
+  });
+  assert.equal(result.ok, true);
+});
+
+test("validateSkimmerInput rejects invalid CALLSIGN filter", () => {
+  const result = validateSkimmerInput({
+    primary: "S53ZO",
+    comparisons: [],
+    fromTsUtc: Date.parse("2026-02-10T00:00:00Z"),
+    toTsUtc: Date.parse("2026-02-10T01:00:00Z"),
+    areaType: "CALLSIGN",
+    areaValue: "??",
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /CALLSIGN filter/i);
+});

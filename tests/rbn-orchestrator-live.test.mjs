@@ -49,6 +49,7 @@ test("resolveSkimmerWindow spans UTC days and enforces max 48h", () => {
 test("normalizeSkimmerArea normalizes area type and values", () => {
   const cq = normalizeSkimmerArea("cq", " 14 ");
   const continent = normalizeSkimmerArea("continent", " eu ");
+  const callsign = normalizeSkimmerArea("callsign", " dl8las ");
   const fallback = normalizeSkimmerArea("foo", "bar");
 
   assert.deepEqual(cq, {
@@ -56,6 +57,7 @@ test("normalizeSkimmerArea normalizes area type and values", () => {
     value: "14",
     continent: "",
     dxcc: "",
+    callsign: "",
     cqZone: 14,
     ituZone: null,
   });
@@ -64,6 +66,16 @@ test("normalizeSkimmerArea normalizes area type and values", () => {
     value: "EU",
     continent: "EU",
     dxcc: "",
+    callsign: "",
+    cqZone: null,
+    ituZone: null,
+  });
+  assert.deepEqual(callsign, {
+    type: "CALLSIGN",
+    value: "DL8LAS",
+    continent: "",
+    dxcc: "",
+    callsign: "DL8LAS",
     cqZone: null,
     ituZone: null,
   });
@@ -72,6 +84,7 @@ test("normalizeSkimmerArea normalizes area type and values", () => {
     value: "",
     continent: "",
     dxcc: "",
+    callsign: "",
     cqZone: null,
     ituZone: null,
   });

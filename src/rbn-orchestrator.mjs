@@ -8,7 +8,7 @@ const SLOT_META = [
   { id: "C", label: "Compare 2" },
   { id: "D", label: "Compare 3" },
 ];
-const SKIMMER_ALLOWED_AREA_TYPES = new Set(["GLOBAL", "CONTINENT", "DXCC", "CQ", "ITU"]);
+const SKIMMER_ALLOWED_AREA_TYPES = new Set(["GLOBAL", "CONTINENT", "DXCC", "CALLSIGN", "CQ", "ITU"]);
 
 function buildSlotRequests(config) {
   const calls = [
@@ -123,21 +123,41 @@ function normalizeSkimmerArea(areaTypeInput, areaValueInput) {
 
   if (type === "CONTINENT") {
     const continent = rawValue.toUpperCase();
-    return { type, value: continent, continent, dxcc: "", cqZone: null, ituZone: null };
+    return { type, value: continent, continent, dxcc: "", callsign: "", cqZone: null, ituZone: null };
   }
   if (type === "DXCC") {
     const dxcc = rawValue.toUpperCase();
-    return { type, value: dxcc, continent: "", dxcc, cqZone: null, ituZone: null };
+    return { type, value: dxcc, continent: "", dxcc, callsign: "", cqZone: null, ituZone: null };
+  }
+  if (type === "CALLSIGN") {
+    const callsign = normalizeCall(rawValue);
+    return { type, value: callsign, continent: "", dxcc: "", callsign, cqZone: null, ituZone: null };
   }
   if (type === "CQ") {
     const zone = parseInt(rawValue, 10);
-    return { type, value: Number.isFinite(zone) ? String(zone) : "", continent: "", dxcc: "", cqZone: zone, ituZone: null };
+    return {
+      type,
+      value: Number.isFinite(zone) ? String(zone) : "",
+      continent: "",
+      dxcc: "",
+      callsign: "",
+      cqZone: zone,
+      ituZone: null,
+    };
   }
   if (type === "ITU") {
     const zone = parseInt(rawValue, 10);
-    return { type, value: Number.isFinite(zone) ? String(zone) : "", continent: "", dxcc: "", cqZone: null, ituZone: zone };
+    return {
+      type,
+      value: Number.isFinite(zone) ? String(zone) : "",
+      continent: "",
+      dxcc: "",
+      callsign: "",
+      cqZone: null,
+      ituZone: zone,
+    };
   }
-  return { type: "GLOBAL", value: "", continent: "", dxcc: "", cqZone: null, ituZone: null };
+  return { type: "GLOBAL", value: "", continent: "", dxcc: "", callsign: "", cqZone: null, ituZone: null };
 }
 
 function spotterMatchesSkimmerArea(spotter, area) {
@@ -148,6 +168,7 @@ function spotterMatchesSkimmerArea(spotter, area) {
 
   if (area.type === "CONTINENT") return meta.continent === area.continent;
   if (area.type === "DXCC") return String(meta.dxcc || "").trim().toUpperCase() === area.dxcc;
+  if (area.type === "CALLSIGN") return normalizeSpotterBase(spotter) === area.callsign;
   if (area.type === "CQ") return Number(meta.cqZone) === Number(area.cqZone);
   if (area.type === "ITU") return Number(meta.ituZone) === Number(area.ituZone);
   return true;

@@ -957,6 +957,7 @@ button {
 }
 
 .rbn-signal-plot {
+  position: relative;
   border: 1px solid #d6e0ee;
   border-radius: 0.65rem;
   background: #fcfeff;
@@ -967,6 +968,17 @@ button {
   display: block;
   width: 100%;
   min-height: 19rem;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.rbn-zoom-brush {
+  position: absolute;
+  border: 1px solid rgba(23, 72, 128, 0.5);
+  background: rgba(30, 106, 186, 0.18);
+  border-radius: 0.2rem;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .rbn-signal-meta {
