@@ -10,6 +10,7 @@ import {
   sortBands,
   getOrBuildSlotIndex,
   getOrBuildRanking,
+  getOrBuildRankingByP75,
   sampleFlatStrideSeeded,
   computeProportionalCaps,
 } from "./src/rbn-compare-index.mjs";
@@ -1354,6 +1355,178 @@ function renderLiveAnalysisCharts() {
   bindLiveChartInteractions(slots);
 }
 
+function teardownSkimmerChartObservers() {
+  if (skimmerState.chart.resizeObserver) {
+    skimmerState.chart.resizeObserver.disconnect();
+    skimmerState.chart.resizeObserver = null;
+  }
+  if (skimmerState.chart.intersectionObserver) {
+    skimmerState.chart.intersectionObserver.disconnect();
+    skimmerState.chart.intersectionObserver = null;
+  }
+  if (skimmerState.chart.drawRaf) {
+    cancelAnimationFrame(skimmerState.chart.drawRaf);
+    skimmerState.chart.drawRaf = 0;
+  }
+}
+
+function getSkimmerReadySlots() {
+  return (skimmerState.analysis?.slots || []).filter((slot) => slot.status === "ready");
+}
+
+function getSkimmerActiveBandFilterSet() {
+  return new Set((skimmerState.chart.selectedBands || []).map((band) => normalizeBandToken(band)).filter(Boolean));
+}
+
+function drawSkimmerCharts(slots) {
+  const canvases = Array.from(ui.skimmerChartsRoot.querySelectorAll(".rbn-signal-canvas")).filter((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement)) return false;
+    if (!skimmerState.chart.intersectionObserver) return true;
+    return canvas.dataset.visible === "1";
+  });
+  if (!canvases.length) return;
+
+  const { minTs, maxTs } = getGlobalTimeRange(slots);
+  const availableBands = getAvailableBands(slots);
+  const bandFilterSet = getSkimmerActiveBandFilterSet();
+
+  for (const canvas of canvases) {
+    const card = canvas.closest(".rbn-signal-card");
+    const continent = String(canvas.dataset.continent || "N/A").toUpperCase();
+    const spotter = String(canvas.dataset.spotter || "");
+
+    if (!spotter) {
+      drawRbnSignalCanvas(canvas, {
+        title: `${continentLabel(continent)} · no skimmer`,
+        minTs,
+        maxTs,
+        minY: -30,
+        maxY: 40,
+        series: [],
+        trendlines: [],
+      });
+      if (card) {
+        updateCardLegend(card, availableBands, bandFilterSet);
+        updateCardMeta(card, 0, null, null);
+      }
+      continue;
+    }
+
+    const model = computeSeriesForSpotter(slots, spotter, bandFilterSet);
+    let minY = Number(model.minSnr);
+    let maxY = Number(model.maxSnr);
+    if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+      minY = -30;
+      maxY = 40;
+    } else if (minY === maxY) {
+      minY -= 5;
+      maxY += 5;
+    } else {
+      const pad = Math.max(2, (maxY - minY) * 0.08);
+      minY -= pad;
+      maxY += pad;
+    }
+
+    const trendlines = buildTrendlines(model.series, minTs, maxTs);
+    const title = `${continentLabel(continent)} · ${spotter}`;
+
+    drawRbnSignalCanvas(canvas, {
+      title,
+      minTs,
+      maxTs,
+      minY,
+      maxY,
+      series: model.series,
+      trendlines,
+    });
+
+    if (card) {
+      updateCardLegend(card, availableBands, bandFilterSet);
+      updateCardMeta(card, model.pointTotal, model.minSnr, model.maxSnr);
+    }
+
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", `${title}. ${formatNumber(model.pointTotal)} points plotted.`);
+  }
+}
+
+function scheduleSkimmerChartDraw(slots) {
+  if (skimmerState.chart.drawRaf) return;
+  skimmerState.chart.drawRaf = requestAnimationFrame(() => {
+    skimmerState.chart.drawRaf = 0;
+    drawSkimmerCharts(slots);
+  });
+}
+
+function bindSkimmerChartInteractions(slots) {
+  teardownSkimmerChartObservers();
+
+  const selects = Array.from(ui.skimmerChartsRoot.querySelectorAll(".rbn-signal-select"));
+  for (const select of selects) {
+    select.addEventListener("change", (event) => {
+      const target = event.currentTarget;
+      const continent = String(target.dataset.continent || "N/A").toUpperCase();
+      const spotter = String(target.value || "");
+      skimmerState.chart.selectedByContinent[continent] = spotter;
+      const canvas = target.closest(".rbn-signal-card")?.querySelector(".rbn-signal-canvas");
+      if (canvas) canvas.dataset.spotter = spotter;
+      scheduleSkimmerChartDraw(slots);
+    });
+  }
+
+  const canvases = Array.from(ui.skimmerChartsRoot.querySelectorAll(".rbn-signal-canvas"));
+  if (typeof ResizeObserver === "function") {
+    skimmerState.chart.resizeObserver = new ResizeObserver(() => scheduleSkimmerChartDraw(slots));
+    for (const canvas of canvases) {
+      skimmerState.chart.resizeObserver.observe(canvas);
+    }
+  }
+
+  if (typeof IntersectionObserver === "function") {
+    skimmerState.chart.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const target = entry.target;
+          if (!(target instanceof HTMLCanvasElement)) continue;
+          target.dataset.visible = entry.isIntersecting ? "1" : "0";
+        }
+        scheduleSkimmerChartDraw(slots);
+      },
+      { root: null, threshold: 0.05, rootMargin: "120px 0px" },
+    );
+
+    for (const canvas of canvases) {
+      canvas.dataset.visible = "0";
+      skimmerState.chart.intersectionObserver.observe(canvas);
+    }
+  } else {
+    for (const canvas of canvases) {
+      canvas.dataset.visible = "1";
+    }
+  }
+
+  scheduleSkimmerChartDraw(slots);
+}
+
+function renderSkimmerChartFailures() {
+  const failed = (skimmerState.analysis?.slots || []).filter((slot) => slot.status === "error" || slot.status === "qrx");
+  if (!failed.length) return "";
+  return `
+    <div class="chart-failures">
+      ${failed
+        .map((slot) => {
+          if (slot.status === "qrx") {
+            const wait = Math.ceil(Math.max(0, Number(slot.retryAfterMs) || 0) / 1000);
+            const text = wait ? `Rate limited, retry in ~${wait}s` : "Rate limited";
+            return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${text}</p>`;
+          }
+          return `<p><b>${slotTitle(slot)} (${escapeHtml(slot.call)})</b>: ${escapeHtml(slot.error || "Failed")}</p>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 function renderSkimmerAnalysisCharts() {
   if (ui.skimmerChartsNote) ui.skimmerChartsNote.hidden = Boolean(skimmerState.analysis);
 
@@ -1364,25 +1537,99 @@ function renderSkimmerAnalysisCharts() {
     return;
   }
 
-  const loaded = skimmerState.analysis.slots.filter((slot) => slot.status === "ready").length;
-  const failed = skimmerState.analysis.slots.filter((slot) => slot.status === "error" || slot.status === "qrx").length;
-  const totalPoints = skimmerState.analysis.slots.reduce(
-    (sum, slot) => sum + (Number.isFinite(slot.totalOfUs) ? Number(slot.totalOfUs) : 0),
-    0,
-  );
-  const from = formatUtcTsToDateTimeDisplay(skimmerState.analysis.fromTs);
-  const to = formatUtcTsToDateTimeDisplay(skimmerState.analysis.toTs);
+  const slots = getSkimmerReadySlots();
+  if (!slots.length) {
+    ui.skimmerChartsRoot.classList.remove("empty-state");
+    ui.skimmerChartsRoot.innerHTML = `
+      <div class="chart-empty">
+        <p>No successful slot data available.</p>
+        ${renderSkimmerChartFailures()}
+      </div>
+    `;
+    setLoadCheck(ui.skimmerCheckCharts, "error");
+    return;
+  }
+
+  const baseSlot = slots.find((slot) => slot.id === "A") || slots[0];
+  const activeBands = getSkimmerActiveBandFilterSet();
+  skimmerState.chart.selectedBands = sortBands(Array.from(activeBands));
+  const rankingBand = activeBands.size === 1 ? Array.from(activeBands)[0] : "";
+  const ranking = getOrBuildRankingByP75(baseSlot, rankingBand, { minSamples: 5 });
+  const callsignLegend = renderCallsignLegend(slots);
+  const cardsOrder = CONTINENT_ORDER.map((continent) => {
+    const list = ranking?.byContinent.get(continent) || [];
+    return {
+      continent,
+      list,
+      topP75: Number.isFinite(list[0]?.p75) ? Number(list[0].p75) : Number.NEGATIVE_INFINITY,
+    };
+  }).sort((a, b) => {
+    if (b.topP75 !== a.topP75) return b.topP75 - a.topP75;
+    return continentSort(a.continent, b.continent);
+  });
+
+  const cardsHtml = cardsOrder
+    .map(({ continent, list }) => {
+      const saved = String(skimmerState.chart.selectedByContinent[continent] || "");
+      const selectedSpotter = saved && list.some((item) => item.spotter === saved) ? saved : list[0]?.spotter || "";
+      if (selectedSpotter) skimmerState.chart.selectedByContinent[continent] = selectedSpotter;
+
+      const options = list.length
+        ? list
+            .slice(0, 80)
+            .map(
+              (item) =>
+                `<option value="${escapeHtml(item.spotter)}" ${item.spotter === selectedSpotter ? "selected" : ""}>` +
+                `${escapeHtml(item.spotter)} (P75 ${Number(item.p75).toFixed(1)} dB · ${formatNumber(item.count)})</option>`,
+            )
+            .join("")
+        : "<option value=''>No skimmers</option>";
+
+      const statusText = list.length ? "" : `No RBN spots found for ${continentLabel(continent)}.`;
+
+      return `
+        <article class="rbn-signal-card">
+          <div class="rbn-signal-head">
+            <h4>${continentLabel(continent)} skimmer</h4>
+            <label class="rbn-signal-picker" aria-label="${continentLabel(continent)} skimmer selector">
+              <select class="rbn-signal-select" data-continent="${continent}" ${list.length ? "" : "disabled"}>
+                ${options}
+              </select>
+            </label>
+            <button type="button" class="rbn-copy-btn" title="Copy as image" aria-label="Copy as image">Copy as image</button>
+            <span class="rbn-signal-status" ${list.length ? "hidden" : ""}>${statusText}</span>
+          </div>
+          <div class="rbn-signal-body">
+            <div class="rbn-signal-plot">
+              <canvas class="rbn-signal-canvas" data-continent="${continent}" data-spotter="${escapeHtml(selectedSpotter)}" data-height="280"></canvas>
+              <div class="rbn-signal-meta">0 points plotted · SNR range: N/A</div>
+            </div>
+            <div class="rbn-signal-side">
+              <div class="rbn-signal-legend">
+                <h5>Bands (click to filter)</h5>
+                <span class="rbn-signal-legend-bands"></span>
+              </div>
+              <div class="rbn-signal-calls">
+                <h5>Callsigns</h5>
+                <div class="rbn-signal-calls-list">
+                  ${callsignLegend}
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
 
   ui.skimmerChartsRoot.classList.remove("empty-state");
   ui.skimmerChartsRoot.innerHTML = `
-    <div class="chart-empty">
-      <p><b>Skimmer comparison loaded.</b></p>
-      <p>Window: ${escapeHtml(from)} UTC → ${escapeHtml(to)} UTC</p>
-      <p>Callsigns loaded: ${loaded} · Failed: ${failed}</p>
-      <p>Filtered spot count: ${formatNumber(totalPoints)}</p>
-    </div>
+    ${renderSkimmerChartFailures()}
+    <div class="rbn-signal-grid">${cardsHtml}</div>
   `;
+
   setLoadCheck(ui.skimmerCheckCharts, "ok");
+  bindSkimmerChartInteractions(slots);
 }
 
 function refreshFormState(options = {}) {
@@ -1545,6 +1792,7 @@ function handleSkimmerReset() {
     skimmerState.analysis = null;
     skimmerState.chart.selectedBands = [];
     skimmerState.chart.selectedByContinent = {};
+    teardownSkimmerChartObservers();
     const now = Date.now();
     const roundedNow = now - (now % (5 * 60 * 1000));
     const defaultFrom = roundedNow - 6 * 3600 * 1000;
@@ -1584,6 +1832,8 @@ async function runSkimmerAnalysis(model) {
     if (runToken !== skimmerState.activeRunToken) return;
     setLoadCheck(ui.skimmerCheckFetch, "ok");
 
+    skimmerState.chart.selectedBands = [];
+    skimmerState.chart.selectedByContinent = {};
     skimmerState.analysis = result;
     renderSkimmerAnalysisCharts();
 
@@ -1806,11 +2056,15 @@ function handleLegendBandClick(event) {
   const root = button.closest(".charts-root");
   if (!root) return;
   const isLive = root === ui.liveChartsRoot;
+  const isSkimmer = root === ui.skimmerChartsRoot;
   const token = String(button.dataset.band || "");
   if (token === "__ALL__") {
     if (isLive) {
       liveState.chart.selectedBands = [];
       renderLiveAnalysisCharts();
+    } else if (isSkimmer) {
+      skimmerState.chart.selectedBands = [];
+      renderSkimmerAnalysisCharts();
     } else {
       state.chart.selectedBands = [];
       renderAnalysisCharts();
@@ -1823,6 +2077,9 @@ function handleLegendBandClick(event) {
   if (isLive) {
     liveState.chart.selectedBands = [band];
     renderLiveAnalysisCharts();
+  } else if (isSkimmer) {
+    skimmerState.chart.selectedBands = [band];
+    renderSkimmerAnalysisCharts();
   } else {
     state.chart.selectedBands = [band];
     renderAnalysisCharts();
@@ -2173,7 +2430,7 @@ function handleCopyCardClick(event) {
   const button = target.closest(".rbn-copy-btn");
   if (!button) return;
   const root = button.closest(".charts-root");
-  if (!root || (root !== ui.chartsRoot && root !== ui.liveChartsRoot)) return;
+  if (!root || (root !== ui.chartsRoot && root !== ui.liveChartsRoot && root !== ui.skimmerChartsRoot)) return;
   const card = button.closest(".rbn-signal-card");
   if (!card) return;
   copyCardAsImage(card, button);
@@ -2207,6 +2464,7 @@ function bindEvents() {
   ui.liveForm.addEventListener("submit", handleLiveSubmit);
   ui.liveForm.addEventListener("reset", handleLiveReset);
   ui.skimmerForm.addEventListener("input", handleSkimmerInput);
+  ui.skimmerAreaType.addEventListener("change", handleSkimmerInput);
   ui.skimmerForm.addEventListener("submit", handleSkimmerSubmit);
   ui.skimmerForm.addEventListener("reset", handleSkimmerReset);
   ui.chartsRoot.addEventListener("click", handleLegendBandClick);
