@@ -429,7 +429,7 @@ function populateSkimmerCallsignDatalist(callsigns) {
 async function loadSkimmerCallsignCatalog() {
   setLoadCheck(ui.skimmerCheckCharts, "loading");
   try {
-    const response = await fetch("https://sm7iun.se/statistics.csv", { cache: "no-store" });
+    const response = await fetch("https://azure.s53m.com/cors/sm7iun-statistics.csv", { cache: "no-store" });
     if (!response.ok) {
       setLoadCheck(ui.skimmerCheckCharts, "error");
       return;
