@@ -239,7 +239,7 @@ function syncHeaderChecksForActiveChapter() {
 
   setCheckLabel(ui.checkFetchLabel, "RBN data");
   setCheckLabel(ui.checkCtyLabel, "cty.dat");
-  setCheckLabel(ui.checkChartsLabel, chapter === "skimmer" ? "SM7UIN stats" : "Charts");
+  setCheckLabel(ui.checkChartsLabel, chapter === "skimmer" ? "SM7IUN" : "Charts");
 
   if (chapter === "historical") return;
   applyLoadCheckVisual(ui.checkFetch, fetchNode?.dataset?.state || "pending");
