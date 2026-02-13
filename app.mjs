@@ -176,6 +176,9 @@ const ui = {
   checkFetch: document.querySelector("#check-fetch"),
   checkCty: document.querySelector("#check-cty"),
   checkCharts: document.querySelector("#check-charts"),
+  checkFetchLabel: document.querySelector("#check-fetch .hero-check-label"),
+  checkCtyLabel: document.querySelector("#check-cty .hero-check-label"),
+  checkChartsLabel: document.querySelector("#check-charts .hero-check-label"),
   chartsNote: document.querySelector("#charts-note"),
   chartsRoot: document.querySelector("#charts-root"),
   liveStatusPill: document.querySelector("#live-status-pill"),
@@ -223,6 +226,27 @@ const SKIMMER_PEER_GROUPS = Object.freeze([
   { id: "continent", label: "Same Continent" },
 ]);
 
+function setCheckLabel(node, text) {
+  if (!node) return;
+  node.textContent = String(text || "");
+}
+
+function syncHeaderChecksForActiveChapter() {
+  const chapter = normalizeChapter(state.activeChapter);
+  const fetchNode = chapter === "live" ? ui.liveCheckFetch : chapter === "skimmer" ? ui.skimmerCheckFetch : ui.checkFetch;
+  const ctyNode = chapter === "live" ? ui.liveCheckCty : chapter === "skimmer" ? ui.skimmerCheckCty : ui.checkCty;
+  const thirdNode = chapter === "live" ? ui.liveCheckCharts : chapter === "skimmer" ? ui.skimmerCheckCharts : ui.checkCharts;
+
+  setCheckLabel(ui.checkFetchLabel, "RBN data");
+  setCheckLabel(ui.checkCtyLabel, "cty.dat");
+  setCheckLabel(ui.checkChartsLabel, chapter === "skimmer" ? "SM7UIN stats" : "Charts");
+
+  if (chapter === "historical") return;
+  applyLoadCheckVisual(ui.checkFetch, fetchNode?.dataset?.state || "pending");
+  applyLoadCheckVisual(ui.checkCty, ctyNode?.dataset?.state || "pending");
+  applyLoadCheckVisual(ui.checkCharts, thirdNode?.dataset?.state || "pending");
+}
+
 function setActiveChapter(chapter) {
   const normalized = chapter === "live" || chapter === "skimmer" ? chapter : "historical";
   state.activeChapter = normalized;
@@ -237,6 +261,7 @@ function setActiveChapter(chapter) {
   if (ui.chapterHistorical) ui.chapterHistorical.hidden = normalized !== "historical";
   if (ui.chapterLive) ui.chapterLive.hidden = normalized !== "live";
   if (ui.chapterSkimmer) ui.chapterSkimmer.hidden = normalized !== "skimmer";
+  syncHeaderChecksForActiveChapter();
   syncLiveRefreshTimer();
 }
 
@@ -1363,7 +1388,7 @@ function setSkimmerStartButtonMode(mode) {
   ui.skimmerStartButton.dataset.state = mode || "idle";
 }
 
-function setLoadCheck(node, status) {
+function applyLoadCheckVisual(node, status) {
   if (!node) return;
   node.dataset.state = status;
   const mark = node.querySelector(".hero-check-mark");
@@ -1377,6 +1402,11 @@ function setLoadCheck(node, status) {
   } else {
     mark.textContent = "○";
   }
+}
+
+function setLoadCheck(node, status) {
+  applyLoadCheckVisual(node, status);
+  syncHeaderChecksForActiveChapter();
 }
 
 function resetLoadChecks() {
