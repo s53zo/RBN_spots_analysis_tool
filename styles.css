@@ -317,7 +317,8 @@ p {
   padding: 0.52rem 0.72rem;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  flex-wrap: nowrap;
   gap: 0.6rem;
 }
 
@@ -333,10 +334,20 @@ p {
   color: #0f3869;
 }
 
+.footer-inline-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.footer-inline-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .footer-links {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-wrap: nowrap;
+  justify-content: center;
   gap: 0.42rem;
 }
 
@@ -1313,12 +1324,8 @@ button {
 
 @media (max-width: 52rem) {
   .footer-inner {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .footer-links {
-    justify-content: flex-start;
+    justify-content: center;
+    overflow-x: auto;
   }
 
   .rbn-signal-side {
