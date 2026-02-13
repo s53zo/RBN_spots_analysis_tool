@@ -203,6 +203,7 @@ const ui = {
   skimmerErrorCallCompare1: document.querySelector("#skimmer-error-call-compare-1"),
   skimmerErrorCallCompare2: document.querySelector("#skimmer-error-call-compare-2"),
   skimmerErrorCallCompare3: document.querySelector("#skimmer-error-call-compare-3"),
+  skimmerCallsignList: document.querySelector("#skimmer-callsign-list"),
   skimmerSuggestions: document.querySelector("#skimmer-peer-suggestions"),
   skimmerSuggestionsMeta: document.querySelector("#skimmer-peer-suggestions-meta"),
   skimmerSuggestionsList: document.querySelector("#skimmer-peer-suggestions-list"),
@@ -214,6 +215,7 @@ const CHART_PLOT_MARGIN = Object.freeze({ left: 52, right: 12, top: 16, bottom: 
 const MIN_ZOOM_DRAG_PX = 8;
 const MIN_ZOOM_WINDOW_MS = 60 * 1000;
 const PERMALINK_VERSION = "v2";
+const PERMALINK_BASE_URL = "https://s53m.com/RBN/";
 const SKIMMER_PEER_GROUPS = Object.freeze([
   { id: "dxcc", label: "Same DXCC" },
   { id: "cq", label: "Same CQ zone" },
@@ -401,6 +403,49 @@ function normalizeChapter(chapter) {
   const value = String(chapter || "").trim().toLowerCase();
   if (value === "live" || value === "skimmer") return value;
   return "historical";
+}
+
+function parseSkimmerCallsignCsv(csvText) {
+  const lines = String(csvText || "").split(/\r?\n/);
+  const calls = new Set();
+  for (const line of lines) {
+    const row = String(line || "").trim();
+    if (!row || row.startsWith("#")) continue;
+    if (/^callsign\s*,/i.test(row)) continue;
+    const first = row.split(",")[0]?.trim().replace(/^"|"$/g, "") || "";
+    const call = normalizeCall(first);
+    if (!call || !CALLSIGN_PATTERN.test(call)) continue;
+    calls.add(call);
+  }
+  return Array.from(calls).sort((a, b) => a.localeCompare(b));
+}
+
+function populateSkimmerCallsignDatalist(callsigns) {
+  if (!ui.skimmerCallsignList) return;
+  const list = Array.isArray(callsigns) ? callsigns : [];
+  ui.skimmerCallsignList.innerHTML = list.map((call) => `<option value="${escapeHtml(call)}"></option>`).join("");
+}
+
+async function loadSkimmerCallsignCatalog() {
+  setLoadCheck(ui.skimmerCheckCharts, "loading");
+  try {
+    const response = await fetch("https://sm7iun.se/statistics.csv", { cache: "no-store" });
+    if (!response.ok) {
+      setLoadCheck(ui.skimmerCheckCharts, "error");
+      return;
+    }
+    const text = await response.text();
+    const callsigns = parseSkimmerCallsignCsv(text);
+    if (!callsigns.length) {
+      setLoadCheck(ui.skimmerCheckCharts, "error");
+      return;
+    }
+    populateSkimmerCallsignDatalist(callsigns);
+    setLoadCheck(ui.skimmerCheckCharts, "ok");
+  } catch {
+    // Keep current manual-entry behavior if remote fetch is unavailable.
+    setLoadCheck(ui.skimmerCheckCharts, "error");
+  }
 }
 
 function encodeBase64UrlUtf8(text) {
@@ -619,8 +664,7 @@ function buildPermalinkUrl(activeChapterOverride) {
   const canonical = buildPermalinkPayload(activeChapterOverride);
   const compact = compactCanonicalPermalinkPayload(canonical);
   const encoded = encodeBase64UrlUtf8(JSON.stringify(compact));
-  const url = new URL(window.location.href);
-  url.search = "";
+  const url = new URL(PERMALINK_BASE_URL);
   url.searchParams.set("pl", PERMALINK_VERSION);
   url.searchParams.set("cfg", encoded);
   return url.toString();
@@ -1350,7 +1394,6 @@ function resetLiveLoadChecks() {
 function resetSkimmerLoadChecks() {
   setLoadCheck(ui.skimmerCheckFetch, "pending");
   setLoadCheck(ui.skimmerCheckCty, "pending");
-  setLoadCheck(ui.skimmerCheckCharts, "pending");
 }
 
 function clearRetryCountdown() {
@@ -2628,7 +2671,6 @@ function renderSkimmerAnalysisCharts() {
   if (!skimmerState.analysis) {
     ui.skimmerChartsRoot.classList.add("empty-state");
     ui.skimmerChartsRoot.innerHTML = "<p>No skimmer comparison results yet.</p>";
-    setLoadCheck(ui.skimmerCheckCharts, "pending");
     return;
   }
 
@@ -2641,7 +2683,6 @@ function renderSkimmerAnalysisCharts() {
         ${renderSkimmerChartFailures()}
       </div>
     `;
-    setLoadCheck(ui.skimmerCheckCharts, "error");
     return;
   }
 
@@ -2735,7 +2776,6 @@ function renderSkimmerAnalysisCharts() {
     <div class="rbn-signal-grid">${cardsHtml}</div>
   `;
 
-  setLoadCheck(ui.skimmerCheckCharts, "ok");
   bindSkimmerChartInteractions(slots);
 }
 
@@ -3379,7 +3419,6 @@ async function runSkimmerAnalysis(model, options = {}) {
     if (runToken !== skimmerState.activeRunToken) return;
     if (ui.skimmerCheckFetch?.dataset.state === "loading") setLoadCheck(ui.skimmerCheckFetch, "error");
     if (ui.skimmerCheckCty?.dataset.state === "loading") setLoadCheck(ui.skimmerCheckCty, "error");
-    setLoadCheck(ui.skimmerCheckCharts, "error");
     setSkimmerStatus("error", error?.message || "Skimmer comparison failed.");
   } finally {
     if (runToken === skimmerState.activeRunToken) {
@@ -4123,6 +4162,9 @@ function bindEvents() {
 function preloadBackgroundData() {
   preloadCtyData().catch(() => {
     // Keep fallback continent inference if cty.dat is unavailable.
+  });
+  loadSkimmerCallsignCatalog().catch(() => {
+    // Keep manual callsign entry even when catalog is unavailable.
   });
 }
 

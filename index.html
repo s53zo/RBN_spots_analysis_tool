@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://azure.s53m.com https://www.google-analytics.com https://region1.google-analytics.com;"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://azure.s53m.com https://sm7iun.se https://www.google-analytics.com https://region1.google-analytics.com;"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>RBN Signal Analysis</title>
@@ -334,6 +334,7 @@
                     id="skimmer-call-primary"
                     name="skimmerCallPrimary"
                     type="text"
+                    list="skimmer-callsign-list"
                     maxlength="20"
                     inputmode="text"
                     autocomplete="off"
@@ -349,6 +350,7 @@
                     id="skimmer-call-compare-1"
                     name="skimmerCallCompare1"
                     type="text"
+                    list="skimmer-callsign-list"
                     maxlength="20"
                     inputmode="text"
                     autocomplete="off"
@@ -363,6 +365,7 @@
                     id="skimmer-call-compare-2"
                     name="skimmerCallCompare2"
                     type="text"
+                    list="skimmer-callsign-list"
                     maxlength="20"
                     inputmode="text"
                     autocomplete="off"
@@ -377,6 +380,7 @@
                     id="skimmer-call-compare-3"
                     name="skimmerCallCompare3"
                     type="text"
+                    list="skimmer-callsign-list"
                     maxlength="20"
                     inputmode="text"
                     autocomplete="off"
@@ -390,6 +394,7 @@
                 <p id="skimmer-peer-suggestions-meta" class="field-help"></p>
                 <div id="skimmer-peer-suggestions-list" class="skimmer-peer-suggestions-list"></div>
               </div>
+              <datalist id="skimmer-callsign-list"></datalist>
             </section>
 
             <section class="skimmer-step" aria-labelledby="skimmer-step-time">
@@ -477,6 +482,21 @@
               </div>
             </section>
           </form>
+          <div class="live-status-shell" aria-live="polite">
+            <div id="skimmer-status-pill" class="status-pill" data-state="ready">Ready</div>
+            <p id="skimmer-status-message" class="status-message" hidden></p>
+            <div class="hero-checks" aria-label="Skimmer data loading progress">
+              <span id="skimmer-check-fetch" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>RBN data</span
+              >
+              <span id="skimmer-check-cty" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>cty.dat</span
+              >
+              <span id="skimmer-check-charts" class="hero-check" data-state="pending"
+                ><span class="hero-check-mark" aria-hidden="true">○</span>SM7UIN stats</span
+              >
+            </div>
+          </div>
         </section>
 
         <section class="panel charts-panel" aria-labelledby="skimmer-charts-heading">
