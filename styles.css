@@ -296,6 +296,10 @@ p {
   gap: 0.35rem;
 }
 
+.live-status-shell[hidden] {
+  display: none !important;
+}
+
 .live-status-shell .hero-checks {
   margin-left: 0;
 }
