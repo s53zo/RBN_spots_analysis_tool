@@ -304,6 +304,70 @@ p {
   margin-left: 0;
 }
 
+.app-footer {
+  width: min(100% - 1.5rem, var(--maxw));
+  margin: 0 auto 1.1rem;
+}
+
+.footer-inner {
+  border: 1px solid #ccdaee;
+  border-radius: 0.9rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(237, 246, 255, 0.92));
+  box-shadow: 0 10px 26px rgba(14, 35, 66, 0.08);
+  padding: 0.52rem 0.72rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.footer-author {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #2f4f78;
+  letter-spacing: 0.01em;
+}
+
+.footer-author strong {
+  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  color: #0f3869;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.42rem;
+}
+
+.footer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid #c8d8ee;
+  background: #eef4ff;
+  color: #1e4b82;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition: transform 130ms ease, background-color 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+
+.footer-link:hover {
+  background: #deebff;
+  border-color: #a8c2ea;
+  color: #0f3d72;
+  transform: translateY(-1px);
+}
+
+.footer-link:focus-visible {
+  outline: 2px solid #2d70c0;
+  outline-offset: 2px;
+}
+
 #analysis-form {
   display: grid;
   gap: 0.6rem;
@@ -828,6 +892,10 @@ button {
   .panel {
     padding: 0.88rem;
   }
+
+  .app-footer {
+    margin-bottom: 1.35rem;
+  }
 }
 
 @media (min-width: 64rem) {
@@ -1244,6 +1312,15 @@ button {
 }
 
 @media (max-width: 52rem) {
+  .footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .footer-links {
+    justify-content: flex-start;
+  }
+
   .rbn-signal-side {
     gap: 0.55rem;
   }
