@@ -183,14 +183,6 @@ const ui = {
   chartsRoot: document.querySelector("#charts-root"),
   liveStatusPill: document.querySelector("#live-status-pill"),
   liveStatusMessage: document.querySelector("#live-status-message"),
-  skimmerStatusPill: document.querySelector("#skimmer-status-pill"),
-  skimmerStatusMessage: document.querySelector("#skimmer-status-message"),
-  liveCheckFetch: document.querySelector("#live-check-fetch"),
-  liveCheckCty: document.querySelector("#live-check-cty"),
-  liveCheckCharts: document.querySelector("#live-check-charts"),
-  skimmerCheckFetch: document.querySelector("#skimmer-check-fetch"),
-  skimmerCheckCty: document.querySelector("#skimmer-check-cty"),
-  skimmerCheckCharts: document.querySelector("#skimmer-check-charts"),
   liveChartsNote: document.querySelector("#live-charts-note"),
   liveChartsRoot: document.querySelector("#live-charts-root"),
   skimmerChartsNote: document.querySelector("#skimmer-charts-note"),
@@ -225,6 +217,43 @@ const SKIMMER_PEER_GROUPS = Object.freeze([
   { id: "itu", label: "Same ITU zone" },
   { id: "continent", label: "Same Continent" },
 ]);
+const REMOTE_FETCH_TIMEOUT_MS = 12000;
+
+const chapterLoadChecks = {
+  historical: { fetch: "pending", cty: "pending", charts: "pending", chartsLabel: "Charts" },
+  live: { fetch: "pending", cty: "pending", charts: "pending", chartsLabel: "Charts" },
+  skimmer: { fetch: "pending", cty: "pending", charts: "pending", chartsLabel: "SM7IUN" },
+};
+
+function normalizeCheckChapter(chapter) {
+  return normalizeChapter(chapter);
+}
+
+function getChapterChecks(chapter) {
+  const key = normalizeCheckChapter(chapter);
+  return chapterLoadChecks[key] || chapterLoadChecks.historical;
+}
+
+function setChapterCheck(chapter, key, status) {
+  const checks = getChapterChecks(chapter);
+  if (key !== "fetch" && key !== "cty" && key !== "charts") return;
+  checks[key] = status;
+  syncHeaderChecksForActiveChapter();
+}
+
+function getChapterCheck(chapter, key) {
+  const checks = getChapterChecks(chapter);
+  if (key !== "fetch" && key !== "cty" && key !== "charts") return "pending";
+  return checks[key] || "pending";
+}
+
+function resetChapterChecks(chapter) {
+  const checks = getChapterChecks(chapter);
+  checks.fetch = "pending";
+  checks.cty = "pending";
+  checks.charts = "pending";
+  syncHeaderChecksForActiveChapter();
+}
 
 function setCheckLabel(node, text) {
   if (!node) return;
@@ -233,18 +262,14 @@ function setCheckLabel(node, text) {
 
 function syncHeaderChecksForActiveChapter() {
   const chapter = normalizeChapter(state.activeChapter);
-  const fetchNode = chapter === "live" ? ui.liveCheckFetch : chapter === "skimmer" ? ui.skimmerCheckFetch : ui.checkFetch;
-  const ctyNode = chapter === "live" ? ui.liveCheckCty : chapter === "skimmer" ? ui.skimmerCheckCty : ui.checkCty;
-  const thirdNode = chapter === "live" ? ui.liveCheckCharts : chapter === "skimmer" ? ui.skimmerCheckCharts : ui.checkCharts;
+  const checks = getChapterChecks(chapter);
 
   setCheckLabel(ui.checkFetchLabel, "RBN data");
   setCheckLabel(ui.checkCtyLabel, "cty.dat");
-  setCheckLabel(ui.checkChartsLabel, chapter === "skimmer" ? "SM7IUN" : "Charts");
-
-  if (chapter === "historical") return;
-  applyLoadCheckVisual(ui.checkFetch, fetchNode?.dataset?.state || "pending");
-  applyLoadCheckVisual(ui.checkCty, ctyNode?.dataset?.state || "pending");
-  applyLoadCheckVisual(ui.checkCharts, thirdNode?.dataset?.state || "pending");
+  setCheckLabel(ui.checkChartsLabel, checks.chartsLabel || "Charts");
+  applyLoadCheckVisual(ui.checkFetch, checks.fetch || "pending");
+  applyLoadCheckVisual(ui.checkCty, checks.cty || "pending");
+  applyLoadCheckVisual(ui.checkCharts, checks.charts || "pending");
 }
 
 function setActiveChapter(chapter) {
@@ -451,25 +476,35 @@ function populateSkimmerCallsignDatalist(callsigns) {
   ui.skimmerCallsignList.innerHTML = list.map((call) => `<option value="${escapeHtml(call)}"></option>`).join("");
 }
 
-async function loadSkimmerCallsignCatalog() {
-  setLoadCheck(ui.skimmerCheckCharts, "loading");
+async function fetchWithTimeout(url, options = {}, timeoutMs = REMOTE_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || REMOTE_FETCH_TIMEOUT_MS));
   try {
-    const response = await fetch("https://azure.s53m.com/cors/sm7iun-statistics.csv", { cache: "no-store" });
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadSkimmerCallsignCatalog() {
+  setChapterCheck("skimmer", "charts", "loading");
+  try {
+    const response = await fetchWithTimeout("https://azure.s53m.com/cors/sm7iun-statistics.csv", { cache: "no-store" });
     if (!response.ok) {
-      setLoadCheck(ui.skimmerCheckCharts, "error");
+      setChapterCheck("skimmer", "charts", "error");
       return;
     }
     const text = await response.text();
     const callsigns = parseSkimmerCallsignCsv(text);
     if (!callsigns.length) {
-      setLoadCheck(ui.skimmerCheckCharts, "error");
+      setChapterCheck("skimmer", "charts", "error");
       return;
     }
     populateSkimmerCallsignDatalist(callsigns);
-    setLoadCheck(ui.skimmerCheckCharts, "ok");
+    setChapterCheck("skimmer", "charts", "ok");
   } catch {
     // Keep current manual-entry behavior if remote fetch is unavailable.
-    setLoadCheck(ui.skimmerCheckCharts, "error");
+    setChapterCheck("skimmer", "charts", "error");
   }
 }
 
@@ -1372,14 +1407,6 @@ function setLiveStartButtonMode(mode) {
 
 function setSkimmerStatus(status, message) {
   skimmerState.status = status;
-  if (ui.skimmerStatusPill && ui.skimmerStatusMessage) {
-    const visualStatus = status === "idle" ? "ready" : status;
-    ui.skimmerStatusPill.dataset.state = visualStatus;
-    ui.skimmerStatusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
-    const showMessage = status !== "idle" && Boolean(message);
-    ui.skimmerStatusMessage.hidden = !showMessage;
-    ui.skimmerStatusMessage.textContent = showMessage ? message : "";
-  }
   refreshPermalinkButtons();
 }
 
@@ -1405,25 +1432,23 @@ function applyLoadCheckVisual(node, status) {
 }
 
 function setLoadCheck(node, status) {
+  if (node === ui.checkFetch) chapterLoadChecks.historical.fetch = status;
+  if (node === ui.checkCty) chapterLoadChecks.historical.cty = status;
+  if (node === ui.checkCharts) chapterLoadChecks.historical.charts = status;
   applyLoadCheckVisual(node, status);
   syncHeaderChecksForActiveChapter();
 }
 
 function resetLoadChecks() {
-  setLoadCheck(ui.checkFetch, "pending");
-  setLoadCheck(ui.checkCty, "pending");
-  setLoadCheck(ui.checkCharts, "pending");
+  resetChapterChecks("historical");
 }
 
 function resetLiveLoadChecks() {
-  setLoadCheck(ui.liveCheckFetch, "pending");
-  setLoadCheck(ui.liveCheckCty, "pending");
-  setLoadCheck(ui.liveCheckCharts, "pending");
+  resetChapterChecks("live");
 }
 
 function resetSkimmerLoadChecks() {
-  setLoadCheck(ui.skimmerCheckFetch, "pending");
-  setLoadCheck(ui.skimmerCheckCty, "pending");
+  resetChapterChecks("skimmer");
 }
 
 function clearRetryCountdown() {
@@ -2411,7 +2436,7 @@ function renderLiveAnalysisCharts() {
   if (!liveState.analysis) {
     ui.liveChartsRoot.classList.add("empty-state");
     ui.liveChartsRoot.innerHTML = "<p>No live analysis results yet.</p>";
-    setLoadCheck(ui.liveCheckCharts, "pending");
+    setChapterCheck("live", "charts", "pending");
     return;
   }
 
@@ -2424,7 +2449,7 @@ function renderLiveAnalysisCharts() {
         ${renderLiveChartFailures()}
       </div>
     `;
-    setLoadCheck(ui.liveCheckCharts, "error");
+    setChapterCheck("live", "charts", "error");
     return;
   }
 
@@ -2506,7 +2531,7 @@ function renderLiveAnalysisCharts() {
     <div class="rbn-signal-grid">${cardsHtml}</div>
   `;
 
-  setLoadCheck(ui.liveCheckCharts, "ok");
+  setChapterCheck("live", "charts", "ok");
   bindLiveChartInteractions(slots);
 }
 
@@ -3372,7 +3397,7 @@ async function runSkimmerAnalysis(model, options = {}) {
   const runToken = skimmerState.activeRunToken + 1;
   skimmerState.activeRunToken = runToken;
   resetSkimmerLoadChecks();
-  setLoadCheck(ui.skimmerCheckCty, "loading");
+  setChapterCheck("skimmer", "cty", "loading");
   setSkimmerStatus("running", "Loading continent prefixes (cty.dat)...");
   ui.skimmerStartButton.disabled = true;
   setSkimmerStartButtonMode("running");
@@ -3381,9 +3406,9 @@ async function runSkimmerAnalysis(model, options = {}) {
     const ctyState = await preloadCtyData();
     if (runToken !== skimmerState.activeRunToken) return;
     if (ctyState?.status === "ok") {
-      setLoadCheck(ui.skimmerCheckCty, "ok");
+      setChapterCheck("skimmer", "cty", "ok");
     } else {
-      setLoadCheck(ui.skimmerCheckCty, "error");
+      setChapterCheck("skimmer", "cty", "error");
       throw new Error("cty.dat is required for skimmer area filtering.");
     }
 
@@ -3403,11 +3428,11 @@ async function runSkimmerAnalysis(model, options = {}) {
       }
     }
 
-    setLoadCheck(ui.skimmerCheckFetch, "loading");
+    setChapterCheck("skimmer", "fetch", "loading");
     setSkimmerStatus("running", "Fetching RBN data for skimmer comparison...");
     const result = await runRbnSkimmerComparison(effectiveModel);
     if (runToken !== skimmerState.activeRunToken) return;
-    setLoadCheck(ui.skimmerCheckFetch, "ok");
+    setChapterCheck("skimmer", "fetch", "ok");
 
     if (!preserveChartState) {
       skimmerState.chart.selectedBands = [];
@@ -3447,8 +3472,8 @@ async function runSkimmerAnalysis(model, options = {}) {
     }
   } catch (error) {
     if (runToken !== skimmerState.activeRunToken) return;
-    if (ui.skimmerCheckFetch?.dataset.state === "loading") setLoadCheck(ui.skimmerCheckFetch, "error");
-    if (ui.skimmerCheckCty?.dataset.state === "loading") setLoadCheck(ui.skimmerCheckCty, "error");
+    if (getChapterCheck("skimmer", "fetch") === "loading") setChapterCheck("skimmer", "fetch", "error");
+    if (getChapterCheck("skimmer", "cty") === "loading") setChapterCheck("skimmer", "cty", "error");
     setSkimmerStatus("error", error?.message || "Skimmer comparison failed.");
   } finally {
     if (runToken === skimmerState.activeRunToken) {
@@ -3467,7 +3492,7 @@ async function runLiveAnalysis(model, options = {}) {
   liveState.activeRunToken = runToken;
 
   resetLiveLoadChecks();
-  setLoadCheck(ui.liveCheckFetch, "loading");
+  setChapterCheck("live", "fetch", "loading");
   setLiveStatus("running", source === "manual" ? "Fetching live RBN data..." : "Refreshing live RBN data...");
   ui.liveStartButton.disabled = true;
   setLiveStartButtonMode("running");
@@ -3475,17 +3500,17 @@ async function runLiveAnalysis(model, options = {}) {
   try {
     const result = await runRbnLiveAnalysis(model);
     if (runToken !== liveState.activeRunToken) return;
-    setLoadCheck(ui.liveCheckFetch, "ok");
+    setChapterCheck("live", "fetch", "ok");
 
-    setLoadCheck(ui.liveCheckCty, "loading");
+    setChapterCheck("live", "cty", "loading");
     const ctyState = await preloadCtyData();
     if (runToken !== liveState.activeRunToken) return;
     if (ctyState?.status === "ok") {
-      setLoadCheck(ui.liveCheckCty, "ok");
+      setChapterCheck("live", "cty", "ok");
     } else if (ctyState?.status === "loading") {
-      setLoadCheck(ui.liveCheckCty, "loading");
+      setChapterCheck("live", "cty", "loading");
     } else {
-      setLoadCheck(ui.liveCheckCty, "error");
+      setChapterCheck("live", "cty", "error");
     }
 
     liveState.analysis = result;
@@ -3525,11 +3550,11 @@ async function runLiveAnalysis(model, options = {}) {
     }
   } catch (error) {
     if (runToken !== liveState.activeRunToken) return;
-    if (ui.liveCheckFetch?.dataset.state === "loading") {
-      setLoadCheck(ui.liveCheckFetch, "error");
+    if (getChapterCheck("live", "fetch") === "loading") {
+      setChapterCheck("live", "fetch", "error");
     }
-    if (ui.liveCheckCty?.dataset.state === "loading") {
-      setLoadCheck(ui.liveCheckCty, "error");
+    if (getChapterCheck("live", "cty") === "loading") {
+      setChapterCheck("live", "cty", "error");
     }
     setLiveStatus("error", error?.message || "Live analysis run failed.");
     trackLiveRefreshEvent("live_refresh_error", {
@@ -3819,6 +3844,7 @@ function loadHtml2CanvasLibrary() {
   html2CanvasLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+    script.integrity = "sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H";
     script.async = true;
     script.crossOrigin = "anonymous";
     script.referrerPolicy = "strict-origin-when-cross-origin";

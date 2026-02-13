@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://azure.s53m.com https://sm7iun.se https://www.google-analytics.com https://region1.google-analytics.com;"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://azure.s53m.com https://www.google-analytics.com https://region1.google-analytics.com;"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>RBN Signal Analysis</title>
@@ -16,15 +16,7 @@
       crossorigin="anonymous"
       referrerpolicy="strict-origin-when-cross-origin"
     ></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        dataLayer.push(arguments);
-      }
-      gtag("js", new Date());
-
-      gtag("config", "G-5GZP4X3VVH");
-    </script>
+    <script src="src/analytics-init.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -34,6 +26,7 @@
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
+      integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt"
       crossorigin="anonymous"
       referrerpolicy="strict-origin-when-cross-origin"
     />
@@ -490,21 +483,6 @@
               </div>
             </section>
           </form>
-          <div class="live-status-shell" aria-live="polite" hidden>
-            <div id="skimmer-status-pill" class="status-pill" data-state="ready">Ready</div>
-            <p id="skimmer-status-message" class="status-message" hidden></p>
-            <div class="hero-checks" aria-label="Skimmer data loading progress">
-              <span id="skimmer-check-fetch" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>RBN data</span
-              >
-              <span id="skimmer-check-cty" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>cty.dat</span
-              >
-              <span id="skimmer-check-charts" class="hero-check" data-state="pending"
-                ><span class="hero-check-mark" aria-hidden="true">○</span>SM7IUN</span
-              >
-            </div>
-          </div>
         </section>
 
         <section class="panel charts-panel" aria-labelledby="skimmer-charts-heading">
@@ -521,11 +499,10 @@
 
     <script
       src="https://cdn.jsdelivr.net/npm/flatpickr"
+      integrity="sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6"
       crossorigin="anonymous"
       referrerpolicy="strict-origin-when-cross-origin"
     ></script>
-    <script type="module">
-      import(`./app.mjs?v=${Date.now()}`);
-    </script>
+    <script type="module" src="src/bootstrap.mjs"></script>
   </body>
 </html>
