@@ -292,7 +292,9 @@ p {
   margin-top: 0.7rem;
   border-top: 1px dashed #cad7e9;
   padding-top: 0.55rem;
-  display: grid;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 0.35rem;
 }
 
