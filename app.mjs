@@ -88,6 +88,8 @@ const liveState = {
     inFlight: false,
     lastModel: null,
     nextRunTs: 0,
+    statusMessage: "",
+    countdownMessage: "",
   },
   retry: {
     timer: 0,
@@ -184,7 +186,6 @@ const ui = {
   chartsRoot: document.querySelector("#charts-root"),
   liveStatusPill: document.querySelector("#live-status-pill"),
   liveStatusMessage: document.querySelector("#live-status-message"),
-  liveRefreshCountdown: document.querySelector("#live-refresh-countdown"),
   liveChartsNote: document.querySelector("#live-charts-note"),
   liveChartsRoot: document.querySelector("#live-charts-root"),
   skimmerChartsNote: document.querySelector("#skimmer-charts-note"),
@@ -1396,8 +1397,8 @@ function setLiveStatus(status, message) {
     ui.liveStatusPill.dataset.state = visualStatus;
     ui.liveStatusPill.textContent = visualStatus === "ready" ? "Ready" : visualStatus === "running" ? "Running" : "Error";
     const showMessage = status !== "idle" && Boolean(message);
-    ui.liveStatusMessage.hidden = !showMessage;
-    ui.liveStatusMessage.textContent = showMessage ? message : "";
+    liveState.refresh.statusMessage = showMessage ? String(message || "").trim() : "";
+    updateLiveStatusMessage();
   }
   refreshPermalinkButtons();
 }
@@ -2919,10 +2920,8 @@ function handleLiveInput() {
 }
 
 function clearLiveRefreshTimer() {
-  if (ui.liveRefreshCountdown) {
-    ui.liveRefreshCountdown.hidden = true;
-    ui.liveRefreshCountdown.textContent = "";
-  }
+  liveState.refresh.countdownMessage = "";
+  updateLiveStatusMessage();
   if (!liveState.refresh.timer) return;
   clearInterval(liveState.refresh.timer);
   liveState.refresh.timer = 0;
@@ -2947,23 +2946,49 @@ function formatLiveCountdownMessage(remainingSeconds) {
   return `Next live update in ${prefix}:${seconds}`;
 }
 
+function updateLiveStatusMessage() {
+  if (!ui.liveStatusMessage) return;
+  if (liveState.status === "running") {
+    ui.liveStatusMessage.hidden = true;
+    if (liveState.refresh.countdownMessage) {
+      liveState.refresh.countdownMessage = "";
+    }
+    return;
+  }
+
+  const parts = [];
+  const baseMessage = String(liveState.refresh.statusMessage || "").trim();
+  const countdownMessage = String(liveState.refresh.countdownMessage || "").trim();
+  if (baseMessage) parts.push(baseMessage);
+  if (countdownMessage) parts.push(countdownMessage);
+
+  if (!parts.length) {
+    ui.liveStatusMessage.hidden = true;
+    ui.liveStatusMessage.textContent = "";
+    return;
+  }
+
+  ui.liveStatusMessage.hidden = false;
+  ui.liveStatusMessage.textContent = parts.join(" · ");
+}
+
 function updateLiveRefreshCountdown() {
-  if (liveState.status === "running" || !ui.liveRefreshCountdown) {
-    ui.liveRefreshCountdown.hidden = true;
-    ui.liveRefreshCountdown.textContent = "";
+  if (liveState.status === "running") {
+    liveState.refresh.countdownMessage = "";
+    updateLiveStatusMessage();
     return;
   }
 
   if (!shouldRunLiveRefreshTimer() || !liveState.refresh.nextRunTs) {
-    ui.liveRefreshCountdown.hidden = true;
-    ui.liveRefreshCountdown.textContent = "";
+    liveState.refresh.countdownMessage = "";
+    updateLiveStatusMessage();
     return;
   }
 
   const remainingMs = liveState.refresh.nextRunTs - Date.now();
   const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
-  ui.liveRefreshCountdown.textContent = formatLiveCountdownMessage(remainingSec);
-  ui.liveRefreshCountdown.hidden = false;
+  liveState.refresh.countdownMessage = formatLiveCountdownMessage(remainingSec);
+  updateLiveStatusMessage();
 }
 
 function syncLiveRefreshTimer() {
