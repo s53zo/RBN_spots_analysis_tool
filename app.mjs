@@ -84,9 +84,10 @@ const liveState = {
   },
   refresh: {
     timer: 0,
-    intervalMs: 5 * 60 * 1000,
+    intervalMs: 60 * 1000,
     inFlight: false,
     lastModel: null,
+    nextRunTs: 0,
   },
   retry: {
     timer: 0,
@@ -183,6 +184,7 @@ const ui = {
   chartsRoot: document.querySelector("#charts-root"),
   liveStatusPill: document.querySelector("#live-status-pill"),
   liveStatusMessage: document.querySelector("#live-status-message"),
+  liveRefreshCountdown: document.querySelector("#live-refresh-countdown"),
   liveChartsNote: document.querySelector("#live-charts-note"),
   liveChartsRoot: document.querySelector("#live-charts-root"),
   skimmerChartsNote: document.querySelector("#skimmer-charts-note"),
@@ -2917,9 +2919,14 @@ function handleLiveInput() {
 }
 
 function clearLiveRefreshTimer() {
+  if (ui.liveRefreshCountdown) {
+    ui.liveRefreshCountdown.hidden = true;
+    ui.liveRefreshCountdown.textContent = "";
+  }
   if (!liveState.refresh.timer) return;
   clearInterval(liveState.refresh.timer);
   liveState.refresh.timer = 0;
+  liveState.refresh.nextRunTs = 0;
 }
 
 function shouldRunLiveRefreshTimer() {
@@ -2928,7 +2935,35 @@ function shouldRunLiveRefreshTimer() {
 
 function triggerLiveRefresh(reason = "interval") {
   if (!liveState.refresh.lastModel || liveState.refresh.inFlight) return;
+  liveState.refresh.nextRunTs = Date.now() + liveState.refresh.intervalMs;
   runLiveAnalysis(liveState.refresh.lastModel, { source: reason });
+}
+
+function formatLiveCountdownMessage(remainingSeconds) {
+  const total = Math.max(0, Math.floor(Number(remainingSeconds) || 0));
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  const prefix = String(minutes).padStart(2, "0");
+  return `Next live update in ${prefix}:${seconds}`;
+}
+
+function updateLiveRefreshCountdown() {
+  if (liveState.status === "running" || !ui.liveRefreshCountdown) {
+    ui.liveRefreshCountdown.hidden = true;
+    ui.liveRefreshCountdown.textContent = "";
+    return;
+  }
+
+  if (!shouldRunLiveRefreshTimer() || !liveState.refresh.nextRunTs) {
+    ui.liveRefreshCountdown.hidden = true;
+    ui.liveRefreshCountdown.textContent = "";
+    return;
+  }
+
+  const remainingMs = liveState.refresh.nextRunTs - Date.now();
+  const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+  ui.liveRefreshCountdown.textContent = formatLiveCountdownMessage(remainingSec);
+  ui.liveRefreshCountdown.hidden = false;
 }
 
 function syncLiveRefreshTimer() {
@@ -2936,8 +2971,25 @@ function syncLiveRefreshTimer() {
     clearLiveRefreshTimer();
     return;
   }
-  if (liveState.refresh.timer) return;
-  liveState.refresh.timer = setInterval(() => triggerLiveRefresh("interval"), liveState.refresh.intervalMs);
+
+  clearLiveRefreshTimer();
+  liveState.refresh.nextRunTs = Date.now() + liveState.refresh.intervalMs;
+  updateLiveRefreshCountdown();
+  liveState.refresh.timer = setInterval(() => {
+    if (!shouldRunLiveRefreshTimer()) {
+      clearLiveRefreshTimer();
+      return;
+    }
+    if (liveState.refresh.inFlight || liveState.status === "running") {
+      updateLiveRefreshCountdown();
+      return;
+    }
+    if (Date.now() >= liveState.refresh.nextRunTs) {
+      liveState.refresh.nextRunTs = Date.now() + liveState.refresh.intervalMs;
+      triggerLiveRefresh("interval");
+    }
+    updateLiveRefreshCountdown();
+  }, 1000);
 }
 
 function handleLiveReset() {
