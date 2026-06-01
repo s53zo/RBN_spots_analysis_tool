@@ -36,15 +36,15 @@ Permalinks are generated as:
 
 - Base URL: `https://s53m.com/RBN/`
 - Query params:
-  - `pl`: permalink format version (`v2` currently)
+  - `pl`: permalink format version (`v3` currently)
   - `cfg`: Base64URL-encoded JSON payload
 
 Implementation details:
 
-- `PERMALINK_VERSION = "v2"` in `app.mjs`.
+- `PERMALINK_VERSION = "v3"` in `app.mjs`.
 - `buildPermalinkPayload()` builds a canonical full UI state (`schema: "v1"` internal shape).
 - `compactCanonicalPermalinkPayload()` shrinks canonical state into short-key format for URLs.
-- `parsePermalinkPayloadFromUrl()` supports both `v1` and `v2` and expands `v2` back to canonical state.
+- `parsePermalinkPayloadFromUrl()` supports `v1`, `v2`, and `v3`, expanding compact payloads back to canonical state.
 
 What is replayed:
 

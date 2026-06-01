@@ -64,6 +64,15 @@ function drawMarkerPath(ctx, x, y, shape, size) {
   ctx.arc(x, y, size, 0, Math.PI * 2);
 }
 
+function lastFinitePoint(data) {
+  for (let i = data.length - 2; i >= 0; i -= 2) {
+    const ts = data[i];
+    const snr = data[i + 1];
+    if (Number.isFinite(ts) && Number.isFinite(snr)) return { ts, snr };
+  }
+  return null;
+}
+
 function buildDeterministicJitter(ts, snr, scale) {
   if (!scale) return { x: 0, y: 0 };
   const a = (Number.isFinite(ts) ? Math.floor(ts / 1000) : 0) | 0;
@@ -161,7 +170,6 @@ function drawRbnSignalCanvas(canvas, model) {
   const trendlines = Array.isArray(model.trendlines) ? model.trendlines : [];
   if (trendlines.length) {
     context.save();
-    context.globalAlpha = 0.45;
     context.lineWidth = 1.8;
     context.lineJoin = "round";
     context.lineCap = "round";
@@ -169,31 +177,53 @@ function drawRbnSignalCanvas(canvas, model) {
     for (const trend of trendlines) {
       const data = Array.isArray(trend?.data) ? trend.data : [];
       if (data.length < 4) continue;
-      context.strokeStyle = trend.color || bandColorForChart(trend.band);
       context.lineWidth = Number.isFinite(trend.width) ? trend.width : 1.8;
       context.setLineDash(Array.isArray(trend.dash) ? trend.dash : []);
 
-      let started = false;
-      let previousTs = null;
-      context.beginPath();
-      for (let i = 0; i < data.length; i += 2) {
-        const ts = data[i];
-        const snr = data[i + 1];
-        if (!Number.isFinite(ts) || !Number.isFinite(snr)) continue;
-        const x = xOf(ts);
-        const y = yOf(snr);
-        const shouldBreak = started && Number.isFinite(previousTs) && ts - previousTs > trendBreakMs;
-        if (!started || shouldBreak) {
-          if (started) context.stroke();
-          context.beginPath();
-          context.moveTo(x, y);
-          started = true;
-        } else {
-          context.lineTo(x, y);
+      for (const pass of ["halo", "color"]) {
+        context.globalAlpha = pass === "halo" ? 0.8 : 0.82;
+        context.strokeStyle = pass === "halo" ? "rgba(255, 255, 255, 0.95)" : trend.color || bandColorForChart(trend.band);
+        context.lineWidth = pass === "halo" ? context.lineWidth + 3.4 : Number.isFinite(trend.width) ? trend.width : 1.8;
+
+        let started = false;
+        let previousTs = null;
+        context.beginPath();
+        for (let i = 0; i < data.length; i += 2) {
+          const ts = data[i];
+          const snr = data[i + 1];
+          if (!Number.isFinite(ts) || !Number.isFinite(snr)) continue;
+          const x = xOf(ts);
+          const y = yOf(snr);
+          const shouldBreak = started && Number.isFinite(previousTs) && ts - previousTs > trendBreakMs;
+          if (!started || shouldBreak) {
+            if (started) context.stroke();
+            context.beginPath();
+            context.moveTo(x, y);
+            started = true;
+          } else {
+            context.lineTo(x, y);
+          }
+          previousTs = ts;
         }
-        previousTs = ts;
+        if (started) context.stroke();
       }
-      if (started) context.stroke();
+
+      const endpoint = lastFinitePoint(data);
+      if (endpoint) {
+        const x = xOf(endpoint.ts);
+        const y = yOf(endpoint.snr);
+        const shape = trend.shape || slotMarkerShape(trend.slotId);
+        context.setLineDash([]);
+        context.globalAlpha = 0.95;
+        context.fillStyle = trend.color || bandColorForChart(trend.band);
+        context.strokeStyle = "rgba(255, 255, 255, 0.96)";
+        context.lineWidth = 2.4;
+        context.beginPath();
+        drawMarkerPath(context, x, y, shape, 4.5);
+        context.fill();
+        context.stroke();
+      }
+
       context.setLineDash([]);
     }
 

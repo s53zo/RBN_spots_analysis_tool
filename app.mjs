@@ -212,7 +212,7 @@ const TAB_NAV_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
 const CHART_PLOT_MARGIN = Object.freeze({ left: 52, right: 12, top: 16, bottom: 26 });
 const MIN_ZOOM_DRAG_PX = 8;
 const MIN_ZOOM_WINDOW_MS = 60 * 1000;
-const PERMALINK_VERSION = "v2";
+const PERMALINK_VERSION = "v3";
 const PERMALINK_BASE_URL = "https://s53m.com/RBN/";
 const SKIMMER_PEER_GROUPS = Object.freeze([
   { id: "dxcc", label: "Same DXCC" },
@@ -737,7 +737,7 @@ function parsePermalinkPayloadFromUrl() {
   const url = new URL(window.location.href);
   const version = String(url.searchParams.get("pl") || "").trim();
   const encoded = String(url.searchParams.get("cfg") || "").trim();
-  if (!encoded || (version !== "v1" && version !== "v2")) return null;
+  if (!encoded || (version !== "v1" && version !== "v2" && version !== "v3")) return null;
   try {
     const decoded = decodeBase64UrlUtf8(encoded);
     const parsed = JSON.parse(decoded);
@@ -1786,8 +1786,9 @@ function buildTrendlines(series, minTs, maxTs) {
         slotId: entry.slotId,
         band: entry.band,
         color: entry.color,
+        shape: entry.shape,
         dash: slotLineDash(entry.slotId),
-        width: entry.slotId === "A" ? 2.1 : 1.7,
+        width: entry.slotId === "A" ? 2.8 : 2.35,
         data: points,
       };
     })
