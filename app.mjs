@@ -349,11 +349,11 @@ function slotMarkerSymbol(slotId) {
 }
 
 function slotLineSample(slotId) {
-  const dash = slotLineDash(slotId);
-  if (!dash.length) return "────";
-  if (dash[0] === 8) return "- - -";
-  if (dash[0] === 2) return "· · ·";
-  return "- · -";
+  const id = String(slotId || "A").toUpperCase();
+  if (id === "B") return "--  --";
+  if (id === "C") return ". . .";
+  if (id === "D") return "- . -";
+  return "────";
 }
 
 function parseDateInputToIso(value) {
