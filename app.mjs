@@ -350,7 +350,7 @@ function slotMarkerSymbol(slotId) {
 
 function slotLineSample(slotId) {
   const id = String(slotId || "A").toUpperCase();
-  if (id === "B") return "--  --";
+  if (id === "B") return "-- --";
   if (id === "C") return ". . .";
   if (id === "D") return "- . -";
   return "────";

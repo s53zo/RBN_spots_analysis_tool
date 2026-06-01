@@ -22,7 +22,7 @@ function slotMarkerShape(slotId) {
 
 function slotLineDash(slotId) {
   const id = String(slotId || "A").toUpperCase();
-  if (id === "B") return [14, 8];
+  if (id === "B") return [12, 4, 12, 14];
   if (id === "C") return [1, 8];
   if (id === "D") return [10, 5, 2, 5];
   return [];
