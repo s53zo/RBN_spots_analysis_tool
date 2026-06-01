@@ -24,7 +24,7 @@ import {
   sampleFlatStrideSeeded,
   computeProportionalCaps,
 } from "./src/rbn-compare-index.mjs";
-import { bandColorForChart, drawRbnSignalCanvas, slotMarkerShape } from "./src/rbn-canvas.mjs";
+import { bandColorForChart, drawRbnSignalCanvas, slotLineDash, slotMarkerShape } from "./src/rbn-canvas.mjs";
 
 const state = {
   activeChapter: "historical",
@@ -350,9 +350,9 @@ function slotMarkerSymbol(slotId) {
 
 function slotLineSample(slotId) {
   const id = String(slotId || "A").toUpperCase();
-  if (id === "B") return "─┬─┬";
-  if (id === "C") return "•••";
-  if (id === "D") return "◆ ◆";
+  if (id === "B") return "-- --";
+  if (id === "C") return ". . .";
+  if (id === "D") return "- . -";
   return "────";
 }
 
@@ -1787,7 +1787,7 @@ function buildTrendlines(series, minTs, maxTs) {
         band: entry.band,
         color: entry.color,
         shape: entry.shape,
-        dash: [],
+        dash: slotLineDash(entry.slotId),
         width: entry.slotId === "A" ? 2.8 : 2.35,
         data: points,
       };
