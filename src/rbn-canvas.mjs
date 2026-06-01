@@ -21,10 +21,6 @@ function slotMarkerShape(slotId) {
 }
 
 function slotLineDash(slotId) {
-  const id = String(slotId || "A").toUpperCase();
-  if (id === "B") return [12, 4, 12, 14];
-  if (id === "C") return [1, 8];
-  if (id === "D") return [10, 5, 2, 5];
   return [];
 }
 
@@ -71,6 +67,131 @@ function lastFinitePoint(data) {
     if (Number.isFinite(ts) && Number.isFinite(snr)) return { ts, snr };
   }
   return null;
+}
+
+function buildTrendSegments(data, xOf, yOf, trendBreakMs) {
+  const segments = [];
+  let current = [];
+  let previousTs = null;
+
+  for (let i = 0; i < data.length; i += 2) {
+    const ts = data[i];
+    const snr = data[i + 1];
+    if (!Number.isFinite(ts) || !Number.isFinite(snr)) continue;
+
+    const shouldBreak = current.length && Number.isFinite(previousTs) && ts - previousTs > trendBreakMs;
+    if (shouldBreak) {
+      if (current.length > 1) segments.push(current);
+      current = [];
+    }
+
+    current.push({ x: xOf(ts), y: yOf(snr) });
+    previousTs = ts;
+  }
+
+  if (current.length > 1) segments.push(current);
+  return segments;
+}
+
+function strokeTrendSegments(ctx, segments) {
+  for (const segment of segments) {
+    if (!Array.isArray(segment) || segment.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(segment[0].x, segment[0].y);
+    for (let i = 1; i < segment.length; i += 1) {
+      ctx.lineTo(segment[i].x, segment[i].y);
+    }
+    ctx.stroke();
+  }
+}
+
+function forEachTrendTexturePoint(segments, spacing, callback) {
+  for (const segment of segments) {
+    if (!Array.isArray(segment) || segment.length < 2) continue;
+    let nextDistance = spacing * 0.75;
+
+    for (let i = 1; i < segment.length; i += 1) {
+      const start = segment[i - 1];
+      const end = segment[i];
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.hypot(dx, dy);
+      if (!Number.isFinite(length) || length <= 0) continue;
+
+      while (nextDistance <= length) {
+        const ratio = nextDistance / length;
+        callback({
+          x: start.x + dx * ratio,
+          y: start.y + dy * ratio,
+          tx: dx / length,
+          ty: dy / length,
+        });
+        nextDistance += spacing;
+      }
+
+      nextDistance -= length;
+    }
+  }
+}
+
+function drawTrendTexture(ctx, segments, trend, color) {
+  const slotId = String(trend?.slotId || "A").toUpperCase();
+  if (slotId === "A") return;
+
+  if (slotId === "B") {
+    const drawTicks = (strokeStyle, lineWidth) => {
+      ctx.save();
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = strokeStyle === color ? 0.95 : 0.9;
+      forEachTrendTexturePoint(segments, 48, ({ x, y, tx, ty }) => {
+        const px = -ty;
+        const py = tx;
+        const size = 6;
+        ctx.beginPath();
+        ctx.moveTo(x - px * size, y - py * size);
+        ctx.lineTo(x + px * size, y + py * size);
+        ctx.stroke();
+      });
+      ctx.restore();
+    };
+
+    drawTicks("rgba(255, 255, 255, 0.96)", 4.2);
+    drawTicks(color, 2);
+    return;
+  }
+
+  if (slotId === "C") {
+    forEachTrendTexturePoint(segments, 38, ({ x, y }) => {
+      ctx.save();
+      ctx.globalAlpha = 0.96;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.96)";
+      ctx.lineWidth = 2.1;
+      ctx.beginPath();
+      ctx.arc(x, y, 3.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    });
+    return;
+  }
+
+  if (slotId === "D") {
+    forEachTrendTexturePoint(segments, 58, ({ x, y }) => {
+      ctx.save();
+      ctx.globalAlpha = 0.96;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.96)";
+      ctx.lineWidth = 2.1;
+      ctx.beginPath();
+      drawMarkerPath(ctx, x, y, "diamond", 4.1);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
 }
 
 function buildDeterministicJitter(ts, snr, scale) {
@@ -177,36 +298,20 @@ function drawRbnSignalCanvas(canvas, model) {
     for (const trend of trendlines) {
       const data = Array.isArray(trend?.data) ? trend.data : [];
       if (data.length < 4) continue;
-      context.lineWidth = Number.isFinite(trend.width) ? trend.width : 1.8;
-      context.setLineDash(Array.isArray(trend.dash) ? trend.dash : []);
+      const color = trend.color || bandColorForChart(trend.band);
+      const lineWidth = Number.isFinite(trend.width) ? trend.width : 1.8;
+      const segments = buildTrendSegments(data, xOf, yOf, trendBreakMs);
+      if (!segments.length) continue;
+      context.setLineDash([]);
 
       for (const pass of ["halo", "color"]) {
         context.globalAlpha = pass === "halo" ? 0.8 : 0.82;
-        context.strokeStyle = pass === "halo" ? "rgba(255, 255, 255, 0.95)" : trend.color || bandColorForChart(trend.band);
-        context.lineWidth = pass === "halo" ? context.lineWidth + 3.4 : Number.isFinite(trend.width) ? trend.width : 1.8;
-
-        let started = false;
-        let previousTs = null;
-        context.beginPath();
-        for (let i = 0; i < data.length; i += 2) {
-          const ts = data[i];
-          const snr = data[i + 1];
-          if (!Number.isFinite(ts) || !Number.isFinite(snr)) continue;
-          const x = xOf(ts);
-          const y = yOf(snr);
-          const shouldBreak = started && Number.isFinite(previousTs) && ts - previousTs > trendBreakMs;
-          if (!started || shouldBreak) {
-            if (started) context.stroke();
-            context.beginPath();
-            context.moveTo(x, y);
-            started = true;
-          } else {
-            context.lineTo(x, y);
-          }
-          previousTs = ts;
-        }
-        if (started) context.stroke();
+        context.strokeStyle = pass === "halo" ? "rgba(255, 255, 255, 0.95)" : color;
+        context.lineWidth = pass === "halo" ? lineWidth + 3.4 : lineWidth;
+        strokeTrendSegments(context, segments);
       }
+
+      drawTrendTexture(context, segments, trend, color);
 
       const endpoint = lastFinitePoint(data);
       if (endpoint) {
@@ -215,7 +320,7 @@ function drawRbnSignalCanvas(canvas, model) {
         const shape = trend.shape || slotMarkerShape(trend.slotId);
         context.setLineDash([]);
         context.globalAlpha = 0.95;
-        context.fillStyle = trend.color || bandColorForChart(trend.band);
+        context.fillStyle = color;
         context.strokeStyle = "rgba(255, 255, 255, 0.96)";
         context.lineWidth = 2.4;
         context.beginPath();
